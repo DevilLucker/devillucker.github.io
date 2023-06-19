@@ -1,3 +1,3 @@
 Version: 1.0.0.1
-Download1: https://cdn.discordapp.com/attachments/1069217893432172605/1120224285475217438/AutoEmu.exe
-Download2: https://cdn.discordapp.com/attachments/1069217893432172605/1119099097698279424/autocapture.exe
+Download1: https://cdn.discordapp.com/attachments/1069217893432172605/1120232946515857468/AutoEmu.exe
+Download2: https://cdn.discordapp.com/attachments/1069217893432172605/1120232946218053774/autocapture.exe
