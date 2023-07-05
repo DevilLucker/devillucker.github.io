@@ -1,2 +1,2 @@
 Version: 1.0.0.1
-Download: https://cdn.discordapp.com/attachments/1069217893432172605/1126028188183699566/AutoEmu.zip
+Download: https://cdn.discordapp.com/attachments/1069217893432172605/1126035389396811846/AutoEmu.zip
