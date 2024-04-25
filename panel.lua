@@ -174,7 +174,7 @@ pcall(function()
                 -- Kiểm tra xem có Devil Fruit không
                 if devilFruitData then
                     -- Tìm Devil Fruit theo tên
-                    local devilFruitMastery = nil
+                    local devilFruitMastery = game:GetService("Players").LocalPlayer.Backpack[game:GetService("Players").LocalPlayer.Data.DevilFruit.Value].Level.Value
                     local devilFruitInfo = nil
                     for _, fruit in pairs(devilFruitData) do
                         if fruit.Type == 'Blox Fruit' and fruit.Name == data['DevilFruit'] then
