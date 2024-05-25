@@ -37,7 +37,7 @@ function performance()
     if _PERF then return end
 
     _PERF = true
-    _TARGETFPS = 8
+    _TARGETFPS = 30
 
     if Message and tonumber(Message) then
         _TARGETFPS = tonumber(Message)
@@ -144,83 +144,83 @@ pcall(function()
 
 -- Thêm hàm mới để lấy thông tin từ người chơi ----------------------------------------------
 
-            local function isDevilFruitMasteryFull(devilFruitName, devilFruitMastery, masteryRequirements)
-                -- Kiểm tra xem DevilFruitMastery có đạt mức full hay không
-                local highestRequirement = 0
-                for _, value in pairs(masteryRequirements) do
-                    if value > highestRequirement then
-                        highestRequirement = value
-                    end
-                end
+local function isDevilFruitMasteryFull(devilFruitName, devilFruitMastery, masteryRequirements)
+    -- Kiểm tra xem DevilFruitMastery có đạt mức full hay không
+    local highestRequirement = 0
+    for _, value in pairs(masteryRequirements) do
+        if value > highestRequirement then
+            highestRequirement = value
+        end
+    end
 
-                print("Highest Requirement for Devil Fruit Main (" .. devilFruitName .. ") is", highestRequirement)
+    print("Highest Requirement for Devil Fruit Main (" .. devilFruitName .. ") is", highestRequirement)
 
-                return devilFruitMastery >= highestRequirement
+    return devilFruitMastery >= highestRequirement
+end
+
+local function getDataFromPlayer(player)
+    local data = {}
+
+    -- Lặp qua dữ liệu của người chơi
+    for i, v in next, player:FindFirstChild('Data'):GetChildren() do
+        if dataFind and table.find(dataFind, v.Name) then
+            data[v.Name] = v.Value
+        end
+    end
+
+    -- Lấy dữ liệu Devil Fruit từ hàm getData
+    local devilFruitData = getData('getInventory') -- Thay thế 'getInventory' bằng hàm thực tế của bạn
+
+    -- Kiểm tra xem có Devil Fruit không
+    if devilFruitData then
+        -- Tìm Devil Fruit theo tên
+        local devilFruitMastery = nil
+        local devilFruitInfo = nil
+        for _, fruit in pairs(devilFruitData) do
+            if fruit.Type == 'Blox Fruit' and fruit.Name == data['DevilFruit'] then
+                devilFruitMastery = fruit.Mastery
+                devilFruitInfo = fruit
+                break
             end
+        end
 
-            local function getDataFromPlayer(player)
-                local data = {}
+        if devilFruitMastery then
+            data['MasteryDevilFruitMain'] = devilFruitMastery
 
-                -- Lặp qua dữ liệu của người chơi
-                for i, v in next, player:FindFirstChild('Data'):GetChildren() do
-                    if dataFind and table.find(dataFind, v.Name) then
-                        data[v.Name] = v.Value
-                    end
-                end
+            -- Kiểm tra và gán giá trị FullMasteryDevilFruitMain
+            local isFull = isDevilFruitMasteryFull(data['DevilFruit'], devilFruitMastery, devilFruitInfo.MasteryRequirements)
+            data['FullMasteryDevilFruitMain'] = isFull and "FullMastery" or "false-FullMastery"
+        else
+            data['MasteryDevilFruitMain'] = "false-NeedAwk"
+            data['FullMasteryDevilFruitMain'] = "false-NeedAwk"
+        end
+    else
+        data['MasteryDevilFruitMain'] = "false-DevilFruit"  -- Hoặc giá trị mặc định nếu không có Devil Fruit
+        data['FullMasteryDevilFruitMain'] = "false-DevilFruit"
+    end
 
-                -- Lấy dữ liệu Devil Fruit từ hàm getData
-                local devilFruitData = getData('getInventory') -- Thay thế 'getInventory' bằng hàm thực tế của bạn
+    data['Race'] = player.Data.Race.Value .. race
 
-                -- Kiểm tra xem có Devil Fruit không
-                if devilFruitData then
-                    -- Tìm Devil Fruit theo tên
-                    local devilFruitMastery = game:GetService("Players").LocalPlayer.Backpack[game:GetService("Players").LocalPlayer.Data.DevilFruit.Value].Level.Value
-                    local devilFruitInfo = nil
-                    for _, fruit in pairs(devilFruitData) do
-                        if fruit.Type == 'Blox Fruit' and fruit.Name == data['DevilFruit'] then
-                            devilFruitMastery = fruit.Mastery
-                            devilFruitInfo = fruit
-                            break
-                        end
-                    end
+    -- Kiểm tra và gán giá trị cho 'V4Tiers'
+    if race == " V4" then
+        data['V4Tiers'] = game.Players.LocalPlayer.Data.Race.C.Value
+    else
+        data['V4Tiers'] = 0
+    end
+    
+    -- Kiểm tra và gán giá trị cho 'FullAWK'
+    local awakenedAbilities = getData('getAwakenedAbilities')
+    local isFullAwakened = "FullAwakened"
+    for _, ability in pairs(awakenedAbilities) do
+        if not ability.Awakened then
+            isFullAwakened = "false-FullAwakened"
+            break
+        end
+    end
+    data['FullAWK'] = isFullAwakened
 
-                    if devilFruitMastery then
-                        data['MasteryDevilFruitMain'] = devilFruitMastery
-
-                        -- Kiểm tra và gán giá trị FullMasteryDevilFruitMain
-                        local isFull = isDevilFruitMasteryFull(data['DevilFruit'], devilFruitMastery, devilFruitInfo.MasteryRequirements)
-                        data['FullMasteryDevilFruitMain'] = isFull and "FullMastery" or "false-FullMastery"
-                    else
-                        data['MasteryDevilFruitMain'] = "false-NeedAwk"
-                        data['FullMasteryDevilFruitMain'] = "false-NeedAwk"
-                    end
-                else
-                    data['MasteryDevilFruitMain'] = "false-DevilFruit"  -- Hoặc giá trị mặc định nếu không có Devil Fruit
-                    data['FullMasteryDevilFruitMain'] = "false-DevilFruit"
-                end
-
-                data['Race'] = player.Data.Race.Value .. race
-
-                -- Kiểm tra và gán giá trị cho 'V4Tiers'
-                if race == " V4" then
-                    data['V4Tiers'] = game.Players.LocalPlayer.Data.Race.C.Value
-                else
-                    data['V4Tiers'] = 0
-                end
-                
-                -- Kiểm tra và gán giá trị cho 'FullAWK'
-                local awakenedAbilities = getData('getAwakenedAbilities')
-                local isFullAwakened = "FullAwakened"
-                for _, ability in pairs(awakenedAbilities) do
-                    if not ability.Awakened then
-                        isFullAwakened = "false-FullAwakened"
-                        break
-                    end
-                end
-                data['FullAWK'] = isFullAwakened
-
-                return data
-            end
+    return data
+end
 
 --------------------------------------------------------------------------------------------
 
@@ -242,7 +242,7 @@ pcall(function()
                 pvData['content']['Data']['MasteryDevilFruitMain'] = additionalData['MasteryDevilFruitMain'] or "default_value_for_MasteryDevilFruitMain"
                 pvData['content']['Data']['FullMasteryDevilFruitMain'] = additionalData['FullMasteryDevilFruitMain'] or "default_value_for_FullMasteryDevilFruitMain"
                 pvData['content']['Data']['FullAWK'] = additionalData['FullAWK'] or "default_value_for_FullAWK"
-
+                pvData['content']['Data']['Bounty'] = game.Players.LocalPlayer.leaderstats:FindFirstChild('Bounty/Honor').Value
                 pvData['content']['Data']['Race'] = game.Players.LocalPlayer.Data.Race.Value..race
                 warn('data')
             end)
