@@ -37,7 +37,7 @@ function performance()
     if _PERF then return end
 
     _PERF = true
-    _TARGETFPS = 30
+    _TARGETFPS = 20
 
     if Message and tonumber(Message) then
         _TARGETFPS = tonumber(Message)
