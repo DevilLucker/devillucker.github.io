@@ -1,5 +1,3 @@
--- getgenv().PVSetting.JoinLowServer set default is true if not set
--- check if PVSetting or Setting is not exist
 if not getgenv().PVSetting then
     getgenv().PVSetting = {}
 end
@@ -7,8 +5,6 @@ end
 if not getgenv().Setting then
     getgenv().Setting = {}
 end
-performance()
-mute()
 local key = getgenv().PVSetting.key or getgenv().Setting.key
 local note = getgenv().PVSetting.note or getgenv().Setting.note
 local delay = getgenv().PVSetting.DelayUpdate or getgenv().Setting.DelayUpdate
@@ -21,23 +17,7 @@ pcall(function()
             pvData['robloxUser'] = game:GetService('Players').LocalPlayer.Name
             pvData['note'] = note
             pvData['content'] = {}
-            pvData['content']['Fighting Style'] = {}
             pvData['content']['Data'] = {}
-            pvData['content']['Inventory'] = {}
-            pvData['content']['Inventory']['Sword'] = {}
-            pvData['content']['Inventory']['Wear'] = {}
-            pvData['content']['Inventory']['Gun'] = {}
-            pvData['content']['Inventory']['Blox Fruit'] = {}
-            pvData['content']['Inventory']['Material'] = {}
-            pvData['content']['Awakened Abilities'] = {}
-            meleeList = {
-                { 'Superhuman', 'BuySuperhuman' },
-                { 'Death Step', 'BuyDeathStep' },
-                { 'Sharkman Karate', 'BuySharkmanKarate' },
-                { 'Electric Claw', 'BuyElectricClaw' },
-                { 'Dragon Talon', 'BuyDragonTalon' },
-                { 'Godhuman', 'BuyGodhuman' }
-            }
 
 
             -- * Gems
