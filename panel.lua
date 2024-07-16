@@ -82,8 +82,8 @@ end
 if not getgenv().Setting then
     getgenv().Setting = {}
 end
-performance()
-mute()
+--performance()
+--mute()
 local key = getgenv().PVSetting.key or getgenv().Setting.key
 local note = getgenv().PVSetting.note or getgenv().Setting.note
 local delay = getgenv().PVSetting.DelayUpdate or getgenv().Setting.DelayUpdate
