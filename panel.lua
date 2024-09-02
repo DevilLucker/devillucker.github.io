@@ -2,9 +2,9 @@ repeat wait()
 until game:FindFirstChild("CoreGui")
         and game.Players.LocalPlayer
 
-repeat wait(.25)
-until game:IsLoaded()
-        and game.Players.LocalPlayer.Character
+--repeat wait(.25)
+--until game:IsLoaded()
+        --and game.Players.LocalPlayer.Character
 
 
 local plr = game:GetService('Players').LocalPlayer
@@ -32,7 +32,7 @@ end)
 local UGS = UserSettings():GetService'UserGameSettings'
 local InputService = game:GetService'UserInputService'
 local RunService = game:GetService("RunService")
-local OldVolume = UGS.MasterVolume
+--local OldVolume = UGS.MasterVolume
 function performance()
     if _PERF then return end
 
