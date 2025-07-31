@@ -1,0 +1,4011 @@
+-- ==================================================
+-- HARDCODED CONFIGURATION
+-- ==================================================
+
+getgenv().AdminConfig = {
+    ["Ping Rarity"] = {
+        ["Common"] = "10kg",
+        ["Uncommon"] = "10kg",
+        ["Rare"] = "10kg",
+        ["Legendary"] = "10kg",
+        ["Mythical"] = "0.1kg",
+        ["Divine"] = "0.1kg",
+        ["Prismatic"] = "0.1kg"
+    },
+    ["Webhook Url"] = "https://canary.discord.com/api/webhooks/1389271244133892198/loYv3XlaEDXtw3_pAsfKvzJvOV56Y-p3m74OcxmpNL5Y4ct62ya4ItNwKficE71-fvDN",
+    ["Optimize"] = true,
+    ["White Screen"] = true,
+    ["Low Settings"] = true,
+    ["Clear All"] = true,
+    ["Cleanup Objects"] = true,
+    ["Clear Services"] = false
+    -- HideUI = false
+}
+repeat
+    wait()
+until game:IsLoaded()
+repeat
+    wait()
+until game.Players.LocalPlayer.Character
+repeat
+    wait()
+    game:GetService("VirtualUser"):CaptureController()
+    game:GetService("VirtualUser"):Button1Down(Vector2.new(0, 0))
+until game.Players.LocalPlayer:GetAttribute("DataFullyLoaded") and
+    game.Players.LocalPlayer:GetAttribute("Finished_Loading")
+repeat
+    wait()
+until game.CoreGui
+
+loadstring([[
+    function LPH_NO_VIRTUALIZE(f) return f end;
+]])();
+
+local Config = getgenv().UserConfig
+
+-- ==================================================
+-- SERVICES & CORE VARIABLES
+-- ==================================================
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local farmParent = Workspace:FindFirstChild("Farm")
+local VirtualUser = game:GetService('VirtualUser')
+local connections = {}
+
+getgenv().InventoryFull = false
+local g_inventoryFull = false -- Global flag to signal when to sell
+
+-- ==================================================
+-- GAG LIBRARY (HELPER FUNCTIONS)
+-- ==================================================
+local GAG = {}
+GAG.__index = GAG
+
+local dataService = require(ReplicatedStorage.Modules.DataService)
+local gameEvents = ReplicatedStorage:WaitForChild("GameEvents")
+local inventoryService = require(ReplicatedStorage.Modules.InventoryService)
+
+-- ==================================================
+-- GAME DATA & MODULES
+-- ==================================================
+-- Remotes for buying items
+local buySeedRemote = ReplicatedStorage.GameEvents:WaitForChild("BuySeedStock")
+local buyGearRemote = ReplicatedStorage.GameEvents:WaitForChild("BuyGearStock")
+local buyPetEggRemote = ReplicatedStorage.GameEvents:WaitForChild("BuyPetEgg")
+local buyBeeRemote = ReplicatedStorage.GameEvents:WaitForChild("BuyEventShopStock")
+
+-- Remotes for actions
+local plantRemote = ReplicatedStorage.GameEvents:WaitForChild("Plant_RE")
+local SellInventoryRemote = ReplicatedStorage.GameEvents:WaitForChild("Sell_Inventory")
+local favoriteRemote = ReplicatedStorage.GameEvents:WaitForChild("Favorite_Item")
+local EventCraftingWorkBench = workspace:WaitForChild("CraftingTables"):WaitForChild("EventCraftingWorkBench")
+
+-- Service Remotes
+local petEggService = ReplicatedStorage.GameEvents:WaitForChild("PetEggService")
+local activePetService = ReplicatedStorage.GameEvents:WaitForChild("ActivePetService")
+local honeyMachineService = ReplicatedStorage.GameEvents:WaitForChild("HoneyMachineService_RE")
+local dinoMachineService = ReplicatedStorage.GameEvents:WaitForChild("DinoMachineService_RE")
+local craftingService = ReplicatedStorage.GameEvents:WaitForChild("CraftingGlobalObjectService")
+
+-- Data Modules
+local SeedData = require(ReplicatedStorage.Data.SeedData)
+local MutationData = require(ReplicatedStorage.Modules.MutationHandler)
+local PetData = require(ReplicatedStorage.Data.PetRegistry.PetList)
+local DataSer = require(ReplicatedStorage.Modules.DataService)
+
+-- Networking
+local ByteNetReliable = ReplicatedStorage:WaitForChild("ByteNetReliable")
+local Notification = require(ReplicatedStorage.Modules.Notification)
+
+----------------------------------
+-----| OPTIMIZE & BOOST FPS |-----
+----------------------------------
+
+-- BEGIN OPTIMIZE --
+
+---[ DELETE OTHER FARM ]---
+
+if farmParent then
+    local farms = farmParent:GetChildren()
+    for i, farmFolder in ipairs(farms) do
+        local important = farmFolder:FindFirstChild("Important")
+        local data = important and important:FindFirstChild("Data")
+        local owner = data and data:FindFirstChild("Owner")
+        local pathName
+        if i == 1 then
+            pathName = "workspace.Farm." .. farmFolder.Name
+        else
+            pathName = string.format("workspace.Farm:GetChildren()[%d]", i)
+        end
+        if owner and owner.Value == LocalPlayer.Name then
+            local toDestroyList = { "CurrentExpansion", "Cutscene_Model", "Grow_All", "Sign" }
+            for _, partName in ipairs(toDestroyList) do
+                local target = farmFolder:FindFirstChild(partName)
+                if target then
+                    target:Destroy()
+                    task.wait()
+                end
+            end
+
+        else
+            farmFolder:Destroy()
+            task.wait()
+        end
+    end
+end
+
+----------------------------
+---[ OPTIMIZE ALL PARTS ]---
+----------------------------
+
+local optimizeAll = LPH_NO_VIRTUALIZE(function()
+    if not LocalPlayer then
+        return
+    end
+    for svc, conn in pairs(connections) do
+        conn:Disconnect()
+        connections[svc] = nil
+    end
+    local function isDescendantOfDuckHub(part)
+        local PlayerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if not PlayerGui then return false end
+        local duckHub = PlayerGui:FindFirstChild("DuckScreenGui_Fullscreen") or PlayerGui:FindFirstChild("DuckScreenGui")
+        if not duckHub then return false end
+        local ok, isDesc = pcall(part.IsDescendantOf, part, duckHub)
+        return ok and isDesc
+    end
+    local function isDescendantOfLocalPlayerModel(part)
+        local localPlayerName = LocalPlayer.Name
+        if not localPlayerName then return false end
+        local playerModelInWorkspace = Workspace:FindFirstChild(localPlayerName)
+        if not playerModelInWorkspace or not playerModelInWorkspace:IsA("Model") then return false end
+        local ok, isDesc = pcall(part.IsDescendantOf, part, playerModelInWorkspace)
+        return ok and isDesc
+    end
+    local function optimizePart(part)
+        if isDescendantOfDuckHub(part) or isDescendantOfLocalPlayerModel(part) then
+            return
+        end
+        local success, err = pcall(function()
+            if part:IsA("Atmosphere") then part.Enabled = false end
+            if part:IsA("BasePart") then
+                part.Transparency = 1
+                part.Material       = Enum.Material.Plastic
+                part.CastShadow     = false
+            end
+            if part:IsA("Beam") then
+                part.Enabled = false
+                part.Brightness = 0
+                part.Color = ColorSequence.new(Color3.new(1, 1, 1))
+                part.LightEmission = 0
+                part.LightInfluence = 0
+                part.Texture = ""
+                part.TextureLength = 0.1
+                part.TextureMode = Enum.TextureMode.Static
+                part.TextureSpeed = 0
+                part.Transparency = NumberSequence.new(1)
+                part.Attachment0 = nil
+                part.Attachment1 = nil
+                part.CurveSize0 = 0
+                part.CurveSize1 = 0
+                part.FaceCamera = false
+                part.Segments = 1
+                part.Width0 = 0
+                part.Width1 = 0
+            end
+            if part:IsA("BillboardGui") then part.Enabled = false end
+            if part:IsA("BloomEffect") then part.Enabled = false end
+            if part:IsA("ColorCorrectionEffect") then part.Enabled = false end
+            if part:IsA("Decal") then part.Texture = ""; part.Transparency = 1 end
+            if part:IsA("DepthOfFieldEffect") then part.Enabled = false end
+            if part:IsA("Fire") then
+                part.Enabled = false
+                part.Brightness = 0
+                part.Color = ColorSequence.new(Color3.new(1, 1, 1))
+                part.LightEmission = 0
+                part.LightInfluence = 0
+                part.Texture = ""
+                part.Transparency = NumberSequence.new(1)
+            end
+            if part:IsA("Frame") then part.Visible = false end
+            if part:IsA("Highlight") then part.Enabled = false end
+            if part:IsA("ImageButton") then part.Image = ""; part.Visible = false; part.Active = false end
+            if part:IsA("ImageLabel") then part.Image = ""; part.Visible = false end
+            if part:IsA("MeshPart") then
+                part.MeshId = ""
+                part.TextureID = ""
+                part.Transparency = 1
+                part.Material = Enum.Material.Plastic
+                part.CastShadow = false
+            end
+            if part:IsA("ParticleEmitter") then
+                part.Enabled = false
+                part.Brightness = 0
+                part.Color = ColorSequence.new(Color3.new(1, 1, 1))
+                part.LightEmission = 0
+                part.LightInfluence = 0
+                part.Texture = ""
+                part.Transparency = NumberSequence.new(1)
+            end
+            if part:IsA("Part") then
+                part.CastShadow = false
+                part.Transparency = 1
+                part.WaterReflectance = 0
+                part.MaterialVariant = ""
+                part.BrickColor = BrickColor.White()
+                part.Color = ColorSequence.new(Color3.new(1, 1, 1))
+                part.Material = Enum.Material.Plastic
+            end
+            if part:IsA("PointLight") then
+                part.Enabled = false
+                part.Shadows = false
+                part.Brightness = 0
+                part.Range = 0
+            end
+            if part:IsA("ScrollingFrame") then
+                part.Visible = false
+                part.Active = false
+                part.BottomImage = ""
+                part.MidImage = ""
+                part.TopImage = ""
+            end
+            if part:IsA("Sky") then 
+                part.Enabled = false 
+            end
+            if part:IsA("SpecialMesh") then
+                part.MeshId = ""
+                part.TextureId = ""
+                if part.Parent and part.Parent:IsA("BasePart") then
+                    part.Parent.Transparency = 1
+                    part.Parent.Material = Enum.Material.Plastic
+                    part.Parent.CastShadow = false
+                end
+            end
+            if part:IsA("SunRaysEffect") then part.Enabled = false end
+            if part:IsA("SurfaceAppearance") then
+                part.ColorMap = ""
+                part.MetalnessMap = ""
+                part.RoughnessMap = ""
+            end
+            if part:IsA("SurfaceGui") then
+                part.Enabled = false
+                part.Active = false
+                part.Brightness = 0
+                part.LightInfluence = 0
+            end
+            if part:IsA("SurfaceLight") then
+                part.Enabled = false
+                part.Shadows = false
+                part.Angle = 0
+                part.Brightness = 0
+                part.Range = 0
+            end
+            if part:IsA("Terrain") then
+                local t = Workspace.Terrain
+                t.WaterColor = Color3.new(1,1,1)
+                t.WaterTransparency = 1
+                t.WaterReflectance = 0
+                t.WaterWaveSize = 0
+                t.WaterWaveSpeed = 0
+            end
+            if part:IsA("TextButton") then
+                part.Visible = false
+                part.Active = false
+            end
+            if part:IsA("TextLabel") then
+                part.Visible = false
+                part.Active = false
+            end
+            if part:IsA("Texture") then
+                part.Texture = ""
+                part.Transparency = 1
+            end
+            if part:IsA("Trail") then
+                part.Enabled = false
+                part.Brightness = 0
+                part.Color = ColorSequence.new(Color3.new(1, 1, 1))
+                part.FaceCamera = false
+                part.LightEmission = 0
+                part.LightInfluence = 0
+                part.Texture = ""
+                part.Transparency = NumberSequence.new(1)
+            end
+            if part:IsA("UIGradient") then
+                part.Enabled = false
+                part.Color = ColorSequence.new(Color3.new(1, 1, 1))
+                part.Transparency = NumberSequence.new(1)
+                part.Rotation = 0
+            end
+            if part:IsA("UIScale") then part.Scale = 0.1 end
+            if part:IsA("UIStroke") then
+                part.Transparency = 1
+                part.Thickness = 0
+                part.Enabled = false
+            end
+            if part:IsA("BasePart") or part:IsA("Beam") or part:IsA("Light") then
+                if part:IsA("BasePart") then part.BrickColor = BrickColor.White() end
+            end
+        end)
+    end
+
+    task.spawn(function()
+        local ok, desc = pcall(Workspace.GetDescendants, Workspace)
+        if ok and desc then
+            for _, obj in ipairs(desc) do
+                optimizePart(obj)
+                task.wait()
+            end
+        end
+    end)
+end)
+
+local guiList = {
+    "ActivePetUI",
+    "BackpackGui",
+    "BillboardGui",
+    "Billboard_UI",
+    "Bottom_UI",
+    "Cmdr",
+    "ConfirmPetEggPurchase",
+    "ConfirmSprinkler",
+    "ConfirmToolPlacement",
+    "CosmeticShop_UI",
+    "CosmeticUI",
+    "CraftingCancel",
+    "CrateUI",
+    "DailyQuests_UI",
+    "Data",
+    "DevConsoleMaster",
+    "EggRarityDisplay_UI",
+    "EventShop_UI",
+    "ExperienceNotifications",
+    "FarmCulling",
+    "FreeSeedSack_UI",
+    "FriendBoost",
+    "FriendInvites",
+    "Friend_Notification",
+    "FruitMutation_UI",
+    "GearHover_UI",
+    "Gear_Shop",
+    "GiftPlayerList",
+    "Gift_Notification",
+    "HoldToCollect",
+    "Honey_UI",
+    "Hud_UI",
+    "InspectPrompt",
+    "Intro_SCREEN",
+    "Notifications",
+    "Odds_UI",
+    "PetEggTutorial",
+    "PetEquipSlots_UI",
+    "PetUI",
+    "PickupTally",
+    "PlantHover_UI",
+    "Pop_Effect",
+    "ProximityPrompts",
+    "RecipeSelection_UI",
+    "ReclaimPrompt",
+    "Rejoin_UI",
+    "RollCrate_UI",
+    "Seed_Shop",
+    "SettingsUI",
+    "Sheckles_UI",
+    "Shop_UI",
+    "ShovelPrompt",
+    "ShowCrateOdds",
+    "SkipCutscene",
+    "StarterPack_UI",
+    "SummerCoins_UI",
+    "SummerRewards_UI",
+    "Teleport_UI",
+    "Top_Notification",
+    "TopbarCentered",
+    "TopbarCenteredClipped",
+    "TopbarStandard",
+    "TopbarStandardClipped",
+    "TravelingMerchantShop_UI",
+    "Trowel_Client",
+    "Tutorial_UI",
+    "Version_UI",
+    "test",
+}
+
+if getgenv().AdminConfig["Clear All"] == true or getgenv().AdminConfig["Clear All"] == nil then
+    task.spawn(function()
+        task.wait(60)
+        for _, guiName in ipairs(guiList) do
+            local gui = PlayerGui:FindFirstChild(guiName)
+            if gui and gui:IsA("ScreenGui") or gui:IsA("Billboard") then
+                gui.Enabled = false
+            end
+        end
+    end)
+end
+
+------------------------------------
+---[ LOW SETTINGS ROBLOX & GAME ]---
+------------------------------------
+
+local function lowSettingsRoblox()
+    pcall(function()
+        UserSettings():GetService("UserGameSettings").MasterVolume = 0
+        UserSettings():GetService("UserGameSettings").SavedQualityLevel = 1
+        workspace.LevelOfDetail = Enum.ModelLevelOfDetail.Disabled
+        game:GetService("Lighting").GlobalShadows = false
+        game.StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+        settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level04
+        settings().Rendering.GraphicsMode = 9
+        local userGameSettings = UserSettings:GetService("UserGameSettings")
+        if userGameSettings then
+            userGameSettings.MasterVolume = 0
+            userGameSettings.SavedQualityLevel = Enum.QualityLevel.Level01
+            userGameSettings.ReducedMotion = true
+        end
+
+        local renderingSettings = settings():GetService("Rendering")
+        if renderingSettings then
+            renderingSettings.QualityLevel = Enum.QualityLevel.Level01
+            renderingSettings.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level04
+            renderingSettings.GraphicsMode = Enum.GraphicsMode.NoGraphics
+            -- renderingSettings.GraphicsMode = Enum.GraphicsMode.Automatic
+        end
+        Workspace.LevelOfDetail = Enum.ModelLevelOfDetail.Disabled
+        Lighting.GlobalShadows = false
+        Lighting.Brightness = 0
+        Lighting.ClockTime = 0
+        Lighting.FogEnd = 999999
+        Lighting.Ambient = Color3.new(0, 0, 0)
+        Lighting.OutdoorAmbient = Color3.new(0, 0, 0)
+        local sky = Lighting:FindFirstChildWhichIsA("Sky")
+        if sky then sky:Destroy() end
+        local atmosphere = Lighting:FindFirstChildWhichIsA("Atmosphere")
+        if atmosphere then atmosphere:Destroy() end
+        local clouds = Lighting:FindFirstChildWhichIsA("Clouds")
+        if clouds then clouds:Destroy() end
+        local terrain = Workspace:FindFirstChildOfClass("Terrain")
+        if terrain then
+            terrain.WaterReflectance = 0
+            terrain.WaterTransparency = 1
+            terrain.WaterWaveSize = 0
+            terrain.WaterWaveSpeed = 0
+        end
+    end)
+end
+
+local function lowSettingsGAG()
+    task.spawn(function()
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local settingsEvent = ReplicatedStorage:WaitForChild("GameEvents"):WaitForChild("SettingsService")
+        local settingsToApply = {
+            { Name = "Textures", Value = false },
+            { Name = "PetShopButton", Value = false },
+            { Name = "PlantableCollisions", Value = false },
+            { Name = "Sounds", Value = false },
+            { Name = "VisualEffects", Value = false },
+            { Name = "Audio", Value = false },
+            { Name = "FavoriteIcons", Value = false },
+            { Name = "Music", Value = false }
+        }
+        for _, setting in ipairs(settingsToApply) do
+            local args = { "SetSetting", setting.Name, setting.Value }
+            settingsEvent:FireServer(unpack(args))
+            task.wait(1)
+        end
+        local SettingsService = require(ReplicatedStorage.Modules.Settings.SettingsService)
+        SettingsService:SetSetting("ShowDetails", "None")
+    end)
+end
+
+------------------------------
+---[ DISABLE 3D RENDERING ]---
+------------------------------
+
+local function disableRendering()
+    pcall(RunService.Set3dRenderingEnabled, RunService, false)
+end
+
+------------------------
+---[ CLEAR SERVICES ]---
+------------------------
+
+local clearServices = LPH_NO_VIRTUALIZE(function()
+    local clearService = function(name)
+        local ok, svc = pcall(function() return game:GetService(name) end)
+        if not ok or not svc then
+            return
+        end
+        for _, child in ipairs(svc:GetChildren()) do
+            local success, err = pcall(function() 
+                child:Destroy() 
+                task.wait()
+            end)
+        end
+    end
+    local services = {
+        "CoreGui",
+        "CorePackages",
+        "Lighting",
+		"MaterialService"
+    }
+    for _, name in ipairs(services) do
+        clearService(name)
+        task.wait()
+    end
+end)
+
+-------------------------------
+---[ DESTROY OTHER OBJECTS ]---
+-------------------------------
+
+Workspace.ChildAdded:Connect(function(child)
+    task.wait(0.1)
+    if child:IsA("Model") and child.Name ~= LocalPlayer.Name then
+        child:Destroy()
+    end
+end)
+
+-----------------------------------
+---[ CLEANUP OBJECTS WORKSPACE ]---
+-----------------------------------
+
+local cleanupWS = LPH_NO_VIRTUALIZE(function()
+	local blacklist = {
+        -- 'Terrain.Clouds',
+        -- 'Terrain.Attachment',
+        -- 'Terrain.BeePollinate',
+        -- 'Terrain.BigPopEffect',
+        -- 'Terrain.EggParticle',
+        -- 'Terrain.MediumPopEffect',
+        -- 'Terrain.PickupParticle',
+        -- 'Terrain.PopEffect',
+        -- 'WeatherVisuals',
+        -- 'Visuals',
+        -- 'NPCS',
+        -- {'Folder', 2},
+        -- 'Dirt_VFX',
+        -- 'SummerHarvestEvent',
+        -- AAAAA
+		'NPCS>Eloise',
+		'NPCS>Gear Stands',
+		'NPCS>Isaac',
+		-- 'NPCS>Pet Stand',
+		'NPCS>Raphael',
+		'NPCS>Sam',
+		'NPCS>Seed Stands',
+		'NPCS>Sell Stands',
+		'NPCS>Steven',
+		'BlacksmithStand',
+		'CraftingTables',
+		'HoneyCombpressor',
+		'MapDecorations',
+		-- 'Visuals',
+		'Interaction',
+		-- 'SummerHarvestEvent',
+		'Model',
+		'FALL_WALL',
+		'Intro',
+		{'BasePlate>Baseplate', 2},
+		'BasePlate>TopBaseplate>Texture',
+		'Water_Effect',
+		'Snowstorm Blizzard',
+		'Rainbows',
+		'NewCosmetics',
+		-- 'NPCS',
+		'Map',
+		'Lightning Rods',
+		'Icon Models',
+		'Flowers',
+		'EasterTreeDecorations',
+		-- 'Dirt_VFX',
+		'Decor',
+		'Debris',
+		'Crafting',
+		-- 'Click_Points',
+		'Cherry',
+		{'Camera>BoltPart', 120},
+		'Camera>AudioListener',
+        'WeatherVisuals>ChocSplash>Attachment>ParticleEmitter',
+        'WeatherVisuals>ChocolateRainEmitter>ParticleEmitter',
+        'WeatherVisuals>FriedSplash>Attachment>ParticleEmitter',
+        'WeatherVisuals>HeatwaveParticles>Rays',
+        'WeatherVisuals>HeatwaveParticles>Waves',
+        'WeatherVisuals>HoneyRainEmitter>ParticleEmitter',
+        'WeatherVisuals>HoneySplash>Attachment>ParticleEmitter',
+        {'WeatherVisuals>RainSplash>Attachment>ParticleEmitter', 4},
+        'WeatherVisuals>SheckleRainEmitter>ParticleEmitter',
+        'WeatherVisuals>SheckleSplash>Attachment>ParticleEmitter',
+        'WeatherVisuals>TRRainSplash>Attachment>ParticleEmitter',
+        'Terrain>BeePollinate>COLOR',
+        {'Terrain>BeePollinate>Effects', 3},
+        'Terrain>BeePollinate>Swirls',
+        'Terrain>BigPopEffect>Gradient',
+        'Terrain>BigPopEffect>ParticleEmitter',
+        'Terrain>EggParticle>Gradient',
+        'Terrain>EggParticle>ParticleEmitter',
+        'Terrain>MediumPopEffect>Gradient',
+        'Terrain>MediumPopEffect>ParticleEmitter',
+        'Terrain>PickupParticle>Gradient',
+        'Terrain>PickupParticle>ParticleEmitter',
+        'Terrain>PopEffect>Gradient',
+        'Terrain>PopEffect>ParticleEmitter',
+	}
+	local function tryDestroyPath(pathString)
+		local pathParts = string.split(pathString, '>')
+		local numParts = #pathParts
+
+		if numParts == 0 then
+			return false
+		end
+		if numParts == 1 then
+			local itemName = pathParts[1]
+			local itemToDestroy = Workspace:FindFirstChild(itemName)
+			if itemToDestroy then
+				local success = pcall(function()
+					local fullName = itemToDestroy:GetFullName()
+					itemToDestroy:Destroy()
+					task.wait()
+				end)
+				return success
+			end
+			return false
+		end
+		local childToDeleteName = pathParts[numParts]
+		local parentName = pathParts[numParts - 1]
+		local grandParent = Workspace
+		for i = 1, numParts - 2 do
+			local pathPartName = pathParts[i]
+			local foundNextParent = grandParent:FindFirstChild(pathPartName)
+			if not foundNextParent then
+				return false
+			end
+			grandParent = foundNextParent
+		end
+		for _, potentialParentInstance in ipairs(grandParent:GetChildren()) do
+			if potentialParentInstance.Name == parentName then
+				local itemToDestroy = potentialParentInstance:FindFirstChild(
+					childToDeleteName
+				)
+				if itemToDestroy then
+					local success = pcall(function()
+						local fullName = itemToDestroy:GetFullName()
+						itemToDestroy:Destroy()
+						task.wait()
+					end)
+					if success then
+						return true
+					else
+						return false
+					end
+				end
+			end
+		end
+		return false
+	end
+	for _, entry in ipairs(blacklist) do
+		local pathString
+		local count = 1
+		if type(entry) == 'string' then
+			pathString = entry
+		elseif type(entry) == 'table' and #entry >= 1 and type(entry[1]) == 'string' then
+			pathString = entry[1]
+			if #entry >= 2 and type(entry[2]) == 'number' and entry[2] > 0 then
+				count = math.floor(entry[2])
+				if count <= 0 then count = 1 end
+			end
+		else
+			continue
+		end
+		for i = 1, count do
+			local destroyedOne = tryDestroyPath(pathString)
+			if not destroyedOne then
+				break
+			end
+		end
+	end
+end)
+
+----------------------------
+---[ CLEANUP OBJECTS RS ]---
+----------------------------
+
+local cleanupRS = LPH_NO_VIRTUALIZE(function()
+	local blacklist = {
+        'Assets>Animations>PetAnimations>Ant>Grab',
+        'Assets>Animations>PetAnimations>Ant>Idle',
+        'Assets>Animations>PetAnimations>Ant>Walk',
+        'Assets>Animations>PetAnimations>Axolotl>Idle',
+        'Assets>Animations>PetAnimations>Axolotl>Walk',
+        'Assets>Animations>PetAnimations>Bear>Idle',
+        'Assets>Animations>PetAnimations>Bear>Roar',
+        'Assets>Animations>PetAnimations>Bear>Walk',
+        'Assets>Animations>PetAnimations>BearBee>Idle',
+        'Assets>Animations>PetAnimations>BearBee>Sit',
+        'Assets>Animations>PetAnimations>BearBee>Walk',
+        'Assets>Animations>PetAnimations>Bee>Idle',
+        'Assets>Animations>PetAnimations>Bee>Pollinate',
+        'Assets>Animations>PetAnimations>Bee>Walk',
+        'Assets>Animations>PetAnimations>Bunny>Chomp',
+        'Assets>Animations>PetAnimations>Bunny>Idle',
+        'Assets>Animations>PetAnimations>Bunny>Walk',
+        'Assets>Animations>PetAnimations>Butterfly>Flutter',
+        'Assets>Animations>PetAnimations>Butterfly>Idle',
+        'Assets>Animations>PetAnimations>Butterfly>Walk',
+        'Assets>Animations>PetAnimations>Capybara>Idle',
+        'Assets>Animations>PetAnimations>Capybara>Walk',
+        'Assets>Animations>PetAnimations>Cat>Idle',
+        'Assets>Animations>PetAnimations>Cat>Nap',
+        'Assets>Animations>PetAnimations>Cat>Walk',
+        'Assets>Animations>PetAnimations>Caterpillar>Idle',
+        'Assets>Animations>PetAnimations>Caterpillar>Walk',
+        'Assets>Animations>PetAnimations>Chicken>Idle',
+        'Assets>Animations>PetAnimations>Chicken>Walk',
+        'Assets>Animations>PetAnimations>ChickenZombie>Idle',
+        'Assets>Animations>PetAnimations>ChickenZombie>Walk',
+        'Assets>Animations>PetAnimations>ChickenZombie>Zombify',
+        'Assets>Animations>PetAnimations>CookedOwl>Fly',
+        'Assets>Animations>PetAnimations>CookedOwl>FlyDown',
+        'Assets>Animations>PetAnimations>CookedOwl>FlyUp',
+        'Assets>Animations>PetAnimations>CookedOwl>Idle',
+        'Assets>Animations>PetAnimations>CookedOwl>Walk',
+        'Assets>Animations>PetAnimations>Cow>Idle',
+        'Assets>Animations>PetAnimations>Cow>Walk',
+        'Assets>Animations>PetAnimations>Crab>Idle',
+        'Assets>Animations>PetAnimations>Crab>Pinch',
+        'Assets>Animations>PetAnimations>Crab>Walk',
+        'Assets>Animations>PetAnimations>Deer>Idle',
+        'Assets>Animations>PetAnimations>Deer>Stomp',
+        'Assets>Animations>PetAnimations>Deer>Walk',
+        'Assets>Animations>PetAnimations>DiscoBee>Dance',
+        'Assets>Animations>PetAnimations>DiscoBee>Idle',
+        'Assets>Animations>PetAnimations>DiscoBee>Walk',
+        'Assets>Animations>PetAnimations>Dog>Dig',
+        'Assets>Animations>PetAnimations>Dog>Idle',
+        'Assets>Animations>PetAnimations>Dog>Walk',
+        'Assets>Animations>PetAnimations>Dragonfly>Idle',
+        'Assets>Animations>PetAnimations>Dragonfly>Walk',
+        'Assets>Animations>PetAnimations>FennecFox>Idle',
+        'Assets>Animations>PetAnimations>FennecFox>Steal',
+        'Assets>Animations>PetAnimations>FennecFox>Walk',
+        'Assets>Animations>PetAnimations>Firefly>Idle',
+        'Assets>Animations>PetAnimations>Firefly>Walk',
+        'Assets>Animations>PetAnimations>Flamingo>Idle',
+        'Assets>Animations>PetAnimations>Flamingo>Stand',
+        'Assets>Animations>PetAnimations>Flamingo>Walk',
+        'Assets>Animations>PetAnimations>Fox>Idle',
+        'Assets>Animations>PetAnimations>Fox>Steal',
+        'Assets>Animations>PetAnimations>Fox>Walk',
+        'Assets>Animations>PetAnimations>Frog>Croak',
+        'Assets>Animations>PetAnimations>Frog>Idle',
+        'Assets>Animations>PetAnimations>Frog>Walk',
+        'Assets>Animations>PetAnimations>Hamster>Idle',
+        'Assets>Animations>PetAnimations>Hamster>Run',
+        'Assets>Animations>PetAnimations>Hamster>Walk',
+        'Assets>Animations>PetAnimations>Hedgehog>Curl',
+        'Assets>Animations>PetAnimations>Hedgehog>CurlLoop',
+        'Assets>Animations>PetAnimations>Hedgehog>Idle',
+        'Assets>Animations>PetAnimations>Hedgehog>Walk',
+        'Assets>Animations>PetAnimations>Kiwi>Idle',
+        'Assets>Animations>PetAnimations>Kiwi>Nurse',
+        'Assets>Animations>PetAnimations>Kiwi>Walk',
+        'Assets>Animations>PetAnimations>Mantis>Idle',
+        'Assets>Animations>PetAnimations>Mantis>Pray',
+        'Assets>Animations>PetAnimations>Mantis>Walk',
+        'Assets>Animations>PetAnimations>Meerkat>Idle',
+        'Assets>Animations>PetAnimations>Meerkat>Stand',
+        'Assets>Animations>PetAnimations>Meerkat>Walk',
+        'Assets>Animations>PetAnimations>MimicOctopus>Idle',
+        'Assets>Animations>PetAnimations>MimicOctopus>Mimicry',
+        'Assets>Animations>PetAnimations>MimicOctopus>Walk',
+        'Assets>Animations>PetAnimations>Mole>DigDown',
+        'Assets>Animations>PetAnimations>Mole>DigUp',
+        'Assets>Animations>PetAnimations>Mole>DigWalk',
+        'Assets>Animations>PetAnimations>Mole>Idle',
+        'Assets>Animations>PetAnimations>Mole>Walk',
+        'Assets>Animations>PetAnimations>Monkey>Idle',
+        'Assets>Animations>PetAnimations>Monkey>Steal',
+        'Assets>Animations>PetAnimations>Monkey>Walk',
+        'Assets>Animations>PetAnimations>Moth>Idle',
+        'Assets>Animations>PetAnimations>Moth>Sing',
+        'Assets>Animations>PetAnimations>Moth>Walk',
+        'Assets>Animations>PetAnimations>Mouse>Idle',
+        'Assets>Animations>PetAnimations>Mouse>Think',
+        'Assets>Animations>PetAnimations>Mouse>Walk',
+        'Assets>Animations>PetAnimations>Orangutan>Idle',
+        'Assets>Animations>PetAnimations>Orangutan>Walk',
+        'Assets>Animations>PetAnimations>Ostrich>Idle',
+        'Assets>Animations>PetAnimations>Ostrich>Walk',
+        'Assets>Animations>PetAnimations>Otter>Idle',
+        'Assets>Animations>PetAnimations>Otter>Spray',
+        'Assets>Animations>PetAnimations>Otter>Walk',
+        'Assets>Animations>PetAnimations>Owl>Fly',
+        'Assets>Animations>PetAnimations>Owl>FlyDown',
+        'Assets>Animations>PetAnimations>Owl>FlyUp',
+        'Assets>Animations>PetAnimations>Owl>Idle',
+        'Assets>Animations>PetAnimations>Owl>Walk',
+        'Assets>Animations>PetAnimations>Panda>Chomp',
+        'Assets>Animations>PetAnimations>Panda>Idle',
+        'Assets>Animations>PetAnimations>Panda>Walk',
+        'Assets>Animations>PetAnimations>Peacock>Fan',
+        'Assets>Animations>PetAnimations>Peacock>Idle',
+        'Assets>Animations>PetAnimations>Peacock>Walk',
+        'Assets>Animations>PetAnimations>Pig>Frenzy',
+        'Assets>Animations>PetAnimations>Pig>Idle',
+        'Assets>Animations>PetAnimations>Pig>Walk',
+        'Assets>Animations>PetAnimations>QueenBee>Idle',
+        'Assets>Animations>PetAnimations>QueenBee>Spin',
+        'Assets>Animations>PetAnimations>QueenBee>Walk',
+        'Assets>Animations>PetAnimations>Raccoon>Idle',
+        'Assets>Animations>PetAnimations>Raccoon>Steal',
+        'Assets>Animations>PetAnimations>Raccoon>Walk',
+        'Assets>Animations>PetAnimations>ScarletMacaw>Fly',
+        'Assets>Animations>PetAnimations>ScarletMacaw>FlyDown',
+        'Assets>Animations>PetAnimations>ScarletMacaw>FlyUp',
+        'Assets>Animations>PetAnimations>ScarletMacaw>Idle',
+        'Assets>Animations>PetAnimations>ScarletMacaw>Walk',
+        'Assets>Animations>PetAnimations>SeaTurtle>Flip',
+        'Assets>Animations>PetAnimations>SeaTurtle>Idle',
+        'Assets>Animations>PetAnimations>SeaTurtle>Splash',
+        'Assets>Animations>PetAnimations>SeaTurtle>Walk',
+        'Assets>Animations>PetAnimations>Seagull>Fly',
+        'Assets>Animations>PetAnimations>Seagull>FlyDown',
+        'Assets>Animations>PetAnimations>Seagull>FlyUp',
+        'Assets>Animations>PetAnimations>Seagull>Idle',
+        'Assets>Animations>PetAnimations>Seagull>Walk',
+        'Assets>Animations>PetAnimations>Seal>Idle',
+        'Assets>Animations>PetAnimations>Seal>Walk',
+        'Assets>Animations>PetAnimations>Snail>Idle',
+        'Assets>Animations>PetAnimations>Snail>Walk',
+        'Assets>Animations>PetAnimations>Snake>Idle',
+        'Assets>Animations>PetAnimations>Snake>Walk',
+        'Assets>Animations>PetAnimations>Squirrel>Idle',
+        'Assets>Animations>PetAnimations>Squirrel>Walk',
+        'Assets>Animations>PetAnimations>Starfish>Idle',
+        'Assets>Animations>PetAnimations>Starfish>Walk',
+        'Assets>Animations>PetAnimations>Toucan>Fly',
+        'Assets>Animations>PetAnimations>Toucan>FlyDown',
+        'Assets>Animations>PetAnimations>Toucan>FlyUp',
+        'Assets>Animations>PetAnimations>Toucan>Idle',
+        'Assets>Animations>PetAnimations>Toucan>Walk',
+        'Assets>Animations>PetAnimations>Turtle>Idle',
+        'Assets>Animations>PetAnimations>Turtle>Walk',
+        'Assets>Animations>PetAnimations>Wasp>Walk',
+        'Assets>Animations>PetAnimations>Wasp>Idle',
+        'Assets>Animations>PetAnimations>Wasp>Pollinate',
+        'Assets>Animations>PetAnimations>Wasp>Sting',
+        'Assets>BeeEntrance>1>Decal',
+        'Assets>BeeEntrance>2>Decal',
+        'Assets>BeeEntrance>3>Decal',
+        {'Assets>DJJhaiFence>Beams>Beam', 9},
+        {'Assets>DJJhaiFence>Part>Attachment', 18},
+        {'Assets>Models>EggModels>Anti Bee Egg>MeshPart', 5},
+        {'Assets>Models>EggModels>Anti Bee Egg>Part', 14},
+        {'Assets>Models>EggModels>Bee Egg>Part', 14},
+        {'Assets>Models>EggModels>Bug Egg>Model', 5},
+        {'Assets>Models>EggModels>Common Egg>Part', 8},
+        {'Assets>Models>EggModels>Common Summer Egg>Part', 8},
+        {'Assets>Models>EggModels>Divine Egg>Part', 16},
+        {'Assets>Models>EggModels>Epic Egg>Part', 16},
+        {'Assets>Models>EggModels>Exotic Bug Egg>Model', 5},
+        {'Assets>Models>EggModels>Fake Egg>Part', 16},
+        {'Assets>Models>EggModels>Legendary Egg>Part', 8},
+        {'Assets>Models>EggModels>Mythical Egg>Part', 10},
+        {'Assets>Models>EggModels>Night Egg>Model', 2},
+        {'Assets>Models>EggModels>Oasis Egg>Part', 28},
+        {'Assets>Models>EggModels>Paradise Egg>CratePart', 47},
+        {'Assets>Models>EggModels>Paradise Egg>Part', 8},
+        {'Assets>Models>EggModels>Premium Anti Bee Egg>MeshPart', 5},
+        {'Assets>Models>EggModels>Premium Anti Bee Egg>Part', 14},
+        {'Assets>Models>EggModels>Premium Night Egg>Model', 2},
+        {'Assets>Models>EggModels>Premium Oasis Egg>Part', 28},
+        {'Assets>Models>EggModels>Rare Egg>Part', 8},
+        {'Assets>Models>EggModels>Rare Summer Egg>Part', 8},
+        {'Assets>Models>EggModels>Uncommon Egg>Part', 8},
+        'Assets>Models>SeedPacks>Crafters Seed Pack>Gear',
+        'Assets>Models>SeedPacks>Crafters Seed Pack>Handle>Equip',
+        'Assets>Models>SeedPacks>Crafters Seed Pack>Handle>Unequip',
+        'Assets>Models>SeedPacks>Crafters Seed Pack>Handle>Gear',
+        {'Assets>Models>SeedPacks>Crafters Seed Pack>Handle>Part', 6},
+        {'Assets>Models>SeedPacks>Crafters Seed Pack>Part>Decal', 2},
+        'Assets>Models>SeedPacks>Exotic>Flower',
+        'Assets>Models>SeedPacks>Exotic>FlowerBack',
+        'Assets>Models>SeedPacks>Exotic>FlowerCENTER',
+        'Assets>Models>SeedPacks>Exotic>FlowerCENTERBack',
+        'Assets>Models>SeedPacks>Exotic>Handle>Equip',
+        'Assets>Models>SeedPacks>Exotic>Handle>Unequip',
+        'Assets>Models>SeedPacks>Exotic>Handle>FlowerCENTER',
+        'Assets>Models>SeedPacks>Exotic>Handle>Flower',
+        {'Assets>Models>SeedPacks>Exotic>Handle>WeldConstraint', 2},
+        'Assets>Models>SeedPacks>Exotic>Part>Shine_Particle',
+        {'Assets>Models>SeedPacks>Exotic>Part>Decal', 2},
+        'Assets>Models>SeedPacks>Exotic Crafters Seed Pack>Gear',
+        'Assets>Models>SeedPacks>Exotic Crafters Seed Pack>Handle>Equip',
+        'Assets>Models>SeedPacks>Exotic Crafters Seed Pack>Handle>Unequip',
+        'Assets>Models>SeedPacks>Exotic Crafters Seed Pack>Handle>Gear',
+        {'Assets>Models>SeedPacks>Exotic Crafters Seed Pack>Handle>Pack', 6},
+        'Assets>Models>SeedPacks>Exotic Crafters Seed Pack>Part>Shine_Particle',
+        {'Assets>Models>SeedPacks>Exotic Crafters Seed Pack>Part>Decal', 2},
+        'Assets>Models>SeedPacks>Exotic Flower Seed Pack>Flower',
+        'Assets>Models>SeedPacks>Exotic Flower Seed Pack>FlowerCENTER',
+        'Assets>Models>SeedPacks>Exotic Flower Seed Pack>Handle>Equip',
+        'Assets>Models>SeedPacks>Exotic Flower Seed Pack>Handle>Unequip',
+        'Assets>Models>SeedPacks>Exotic Flower Seed Pack>Handle>Flower',
+        'Assets>Models>SeedPacks>Exotic Flower Seed Pack>Handle>FlowerCENTER',
+        {'Assets>Models>SeedPacks>Exotic Flower Seed Pack>Handle>Part', 6},
+        'Assets>Models>SeedPacks>Exotic Flower Seed Pack>Part>Shine_Particle',
+        {'Assets>Models>SeedPacks>Exotic Flower Seed Pack>Part>Decal', 2},
+        'Assets>Models>SeedPacks>Exotic Summer Seed Pack>Handle>Equip',
+        'Assets>Models>SeedPacks>Exotic Summer Seed Pack>Handle>Unequip',
+        {'Assets>Models>SeedPacks>Exotic Summer Seed Pack>Handle>Part', 6},
+        {'Assets>Models>SeedPacks>Exotic Summer Seed Pack>Handle>Sunpart', 9},
+        'Assets>Models>SeedPacks>Exotic Summer Seed Pack>Part>Shine_Particle',
+        {'Assets>Models>SeedPacks>Exotic Summer Seed Pack>Part>Decal', 2},
+        'Assets>Models>SeedPacks>Flower Seed Pack>Flower',
+        'Assets>Models>SeedPacks>Flower Seed Pack>FlowerCENTER',
+        'Assets>Models>SeedPacks>Flower Seed Pack>Handle>Equip',
+        'Assets>Models>SeedPacks>Flower Seed Pack>Handle>Unequip',
+        'Assets>Models>SeedPacks>Flower Seed Pack>Handle>Flower',
+        'Assets>Models>SeedPacks>Flower Seed Pack>Handle>FlowerCENTER',
+        {'Assets>Models>SeedPacks>Flower Seed Pack>Handle>Part', 6},
+        'Assets>Models>SeedPacks>Flower Seed Pack>Part>Shine_Particle',
+        {'Assets>Models>SeedPacks>Flower Seed Pack>Part>Decal', 2},
+        'Assets>Models>SeedPacks>Night>Model>Model>Part>Shine_Particle',
+        'Assets>Models>SeedPacks>Night>MeshPart',
+        'Assets>Models>SeedPacks>Night>Handle>WeldConstraint',
+        {'Assets>Models>SeedPacks>Night>Handle>Weld', 6},
+        'Assets>Models>SeedPacks>NightPremium>Model>Model>Part>Shine_Particle',
+        'Assets>Models>SeedPacks>NightPremium>MeshPart',
+        'Assets>Models>SeedPacks>NightPremium>Handle>WeldConstraint',
+        {'Assets>Models>SeedPacks>NightPremium>Handle>Weld', 6},
+        {'Assets>Models>SeedPacks>Normal>Handle>Part', 7},
+        {'Assets>Models>SeedPacks>Normal>Part>Decal', 2},
+        'Assets>Models>SeedPacks>Rainbow Exotic Crafters Seed Pack>Gear',
+        'Assets>Models>SeedPacks>Rainbow Exotic Crafters Seed Pack>Handle>Equip',
+        'Assets>Models>SeedPacks>Rainbow Exotic Crafters Seed Pack>Handle>Unequip',
+        'Assets>Models>SeedPacks>Rainbow Exotic Crafters Seed Pack>Handle>Gear',
+        {'Assets>Models>SeedPacks>Rainbow Exotic Crafters Seed Pack>Handle>Part', 6},
+        'Assets>Models>SeedPacks>Rainbow Exotic Crafters Seed Pack>Part>Shine_Particle',
+        {'Assets>Models>SeedPacks>Rainbow Exotic Crafters Seed Pack>Part>Decal', 2},
+        {'Assets>Models>SeedPacks>SeedSackBasic>Handle>Part', 7},
+        {'Assets>Models>SeedPacks>SeedSackPremium>FlowerPedal', 12},
+        {'Assets>Models>SeedPacks>SeedSackPremium>Handle>FlowerPedal', 12},
+        {'Assets>Models>SeedPacks>SeedSackPremium>Handle>Part', 8},
+        'Assets>Models>SeedPacks>SeedSackPremium>Part>Shine_Particle',
+        'Assets>Models>SeedPacks>Summer Seed Pack>Handle>Equip',
+        {'Assets>Models>SeedPacks>Summer Seed Pack>Handle>Part', 6},
+        'Assets>Models>SeedPacks>Summer Seed Pack>Handle>Unequip',
+        {'Assets>Models>SeedPacks>Summer Seed Pack>Handle>Sunpart', 9},
+        {'Assets>Models>SeedPacks>Summer Seed Pack>Part>Decal', 2},
+        'Assets>PetVFX>BambooParticles',
+        'Assets>PetVFX>CarrotParticles',
+        'Assets>PetVFX>CookBreath',
+        'Assets>PetVFX>DigAroundEffect',
+        'Assets>PetVFX>DigEffect',
+        'Assets>PetVFX>FrostBreath',
+        'Assets>PetVFX>GlowEffect',
+        'Assets>PetVFX>MacawLights',
+        'Assets>PetVFX>MagicPollenTornado',
+        'Assets>PetVFX>MudSplashEffect',
+        'Assets>PetVFX>MusicNotes',
+        'Assets>PetVFX>PollenDrops',
+        'Assets>PetVFX>PollenMessy',
+        'Assets>PetVFX>RainbowMusicNotes',
+        'Assets>PetVFX>RainbowPollenTornado',
+        'Assets>PetVFX>RedMusicNotes',
+        'Assets>PetVFX>SandScatter',
+        'Assets>PetVFX>Shimmer',
+        'Assets>PetVFX>ShinyEffect',
+        'Assets>PetVFX>Shockwave',
+        'Assets>PetVFX>ShockwaveCool',
+        'Assets>PetVFX>Transform',
+        'Assets>PetVFX>WaterSplash',
+        'Assets>PetVFX>ZombieBeam',
+        'Assets>PetVFX>ZzzEffect',
+        'Assets>SFX>CrateOpen',
+        'Assets>SFX>Gold_SFX',
+        'Assets>SFX>MagicSFX',
+        'Assets>SFX>Pop',
+        'Assets>SFX>PopSound',
+        'Assets>SFX>Rainbow_SFX',
+        'Assets>SFX>RisingAccent',
+        {'Assets>ThrusterBeams>Part>A>Attachment', 8},
+        {'Assets>ThrusterBeams>Part>B>Attachment', 8},
+        'Assets>VFX>SpottedEffect>SpottedFX>PointLight',
+        'Assets>VFX>SpottedEffect>SpottedFX>SpotParticle',
+        'Assets>VFX>EggPop>PopParticles',
+        {'Assets>Beenado>Base>Attachment>ParticleEmitter', 8},
+        'Assets>Beenado>Base>Attachment>SmokeP',
+        'Assets>Beenado>SpinMe>ParticleEmitter',
+        'Assets>Beenado>Template>BottomLeft>Beam',
+        'Assets>Beenado>Template>BottomRight>Beam',
+        {'Assets>Beenado>Template>TopRight>Beam', 2},
+        {'Assets>BlackHoleOrbs>A>Attachment>Trail', 2},
+        'Assets>BlackHoleOrbs>A>Attachment>Sphere',
+        'Assets>BlackHoleOrbs>A>ParticleEmitter2',
+        {'Assets>BlackHoleOrbs>B>Attachment>Trail', 2},
+        'Assets>BlackHoleOrbs>B>Attachment>Sphere',
+        'Assets>BlackHoleOrbs>B>ParticleEmitter2',
+        {'Assets>Blackhole>Model>Core>Attachment>Bolts', 2},
+        {'Assets>Blackhole>Model>Core>Attachment>DisableShield', 2},
+        'Assets>Blackhole>Model>BigPart>Sound',
+        'Assets>Blackhole>Model>BigPart>ParticleEmitter',
+        {'Assets>Blackhole>Floor>ParticleEmitter', 4},
+        'Assets>Rainbow>End>PixelSmoke',
+        'Assets>Rainbow>Start>Attachment>Beam',
+        'Assets>Rainbow>Start>PixelSmoke',
+        {'Assets>Tornado>Base>Attachment>ParticleEmitter', 5},
+        'Assets>Tornado>Base>Attachment>SmokeP',
+        'Assets>Tornado>Template>BottomLeft>Beam',
+        'Assets>Tornado>Template>BottomRight>Beam',
+        {'Assets>Tornado>Template>TopRight>Beam', 3},
+        {'Assets>Meteor>Attachment>Backlines', 2},
+        'Assets>Meteor>Attachment>CenterSurroundingThingy',
+        'Assets>Meteor>Attachment>Ring',
+        'Assets>Meteor>Attachment>Sparkle',
+        {'Assets>Meteor>Attachment>Trail', 2},
+        'Assets>Meteor>Dots',
+        'Assets>EggPoof>PixelSmoke',
+        {'Assets>LightWindyEffect>ParticleEmitter', 3},
+        'Assets>LightWindyEffect>quick',
+        'Assets>MeteorSite>Attachment>Glow',
+        'Assets>MeteorSite>Attachment>Gradient',
+        'Assets>MeteorSite>Attachment>MiddleDecor',
+        'Assets>MeteorSite>Attachment>ParticleEmitter',
+        'Assets>MeteorSite>Attachment>Particles',
+        'Assets>MeteorSite>Attachment>Smoke',
+        'Assets>MeteorSite>Attachment>Sparkle',
+        'Assets>MeteorSite>Attachment>Landed',
+        {'Assets>WindyEffect>ParticleEmitter', 3},
+        'Assets>WindyEffect>quick',
+        'Assets>beamTrail>Attachment',
+        'Assets>beamTrail>Attachment1',
+        'WindyFrostEffect>quick',
+        'WindyFrostEffect>Smoke',
+        'TRRainSplash>Attachment>ParticleEmitter',
+        'SunStrike>Specs',
+        'SunStrike>Shards',
+        'SunStrike>Lightning1',
+        'SunStrike>zap',
+        'SunStrike>lightning_strike',
+        'SunStrike>flame',
+        {'SubmergeEffect>Bubbles', 2},
+        {'StarHit>Specs', 2},
+        {'StarHit>Shards', 2},
+        {'StarHit>Attachment>Gradient', 2},
+        'StarHit>Attachment>Main',
+        'StarHit>Attachment>PointLight',
+        'StarHit>Attachment>Spark',
+        {'StarHit>Attachment>Specs', 2},
+        {'ShootingStar>Attachment>Trail', 4},
+        'ShootingStar>StarFallSFX_02_GrowAGarden',
+        'ShootingStar>StarFallSFX_01_GrowAGarden',
+        'SheckleSplash>Attachment>ParticleEmitter',
+        'SheckleRainEmitter>ParticleEmitter',
+        'RewardDropVisual>Trail',
+        'Rainbow_Reference>Shine_Particle',
+        'Rainbow_Reference>Attachment>rainbow',
+        {'RainbowPart>Texture', 4},
+        'RainSplash>Attachment>ParticleEmitter',
+        'LightningHit>Attachment>Gradient',
+        'LightningHit>Attachment>Main',
+        'LightningHit>Attachment>PointLight',
+        'LightningHit>Attachment>Spark',
+        'LightningHit>Attachment>Specs',
+        'LightningHit>Lightning1',
+        'LightningHit>Shards',
+        'LightningHit>Specs',
+        'HoneySplash>Attachment>ParticleEmitter',
+        'HoneyRainEmitter>ParticleEmitter',
+        'Gold_Reference>Shine_Particle',
+        'FriedSplash>Attachment>ParticleEmitter',
+        {'FireworkBoom>Attachment>Gradient', 2},
+        'FireworkBoom>Attachment>Main',
+        {'FireworkBoom>Attachment>Shards', 2},
+        'FireworkBoom>Attachment>Spark',
+        {'FireworkBoom>Attachment>Specs', 4},
+        'ChocolateRainEmitter>ParticleEmitter',
+        'ChocSplash>Attachment>ParticleEmitter',
+        'ChickenRainEmitter>ParticleEmitter',
+        'Bubble>Bubbles',
+        'BeeHit>lightning_strike',
+        'BeeHit>Attachment>Gradient',
+        'BeeHit>Attachment>Main',
+        'BeeHit>Attachment>PointLight',
+        'BeeHit>Attachment>Spark',
+        'BeeHit>Attachment>Specs',
+        'BeeHit>Lightning1',
+        'BeeHit>ParticleEmitter',
+        'BeeHit>Shards',
+        'BeeHit>Specs',
+        'ChocParticle',
+        'FriedChickenParticle',
+        'HoneyParticle',
+        'RainParticle',
+        'SheckleParticle',
+        'SnowParticle',
+        'TropicalRainParticle',
+        'WaterLevel',
+	}
+
+	local function tryDestroyPath(pathString)
+		local pathParts = string.split(pathString, '>')
+		local numParts = #pathParts
+
+		if numParts == 0 then
+			return false
+		end
+		if numParts == 1 then
+			local itemName = pathParts[1]
+			local itemToDestroy = game:GetService("ReplicatedStorage"):FindFirstChild(itemName)
+			if itemToDestroy then
+				local success = pcall(function()
+					local fullName = itemToDestroy:GetFullName()
+					itemToDestroy:Destroy()
+					task.wait()
+				end)
+				return success
+			end
+			return false
+		end
+		local childToDeleteName = pathParts[numParts]
+		local parentName = pathParts[numParts - 1]
+		local grandParent = game:GetService("ReplicatedStorage")
+		for i = 1, numParts - 2 do
+			local pathPartName = pathParts[i]
+			local foundNextParent = grandParent:FindFirstChild(pathPartName)
+			if not foundNextParent then
+				return false
+			end
+			grandParent = foundNextParent
+		end
+		for _, potentialParentInstance in ipairs(grandParent:GetChildren()) do
+			if potentialParentInstance.Name == parentName then
+				local itemToDestroy = potentialParentInstance:FindFirstChild(
+					childToDeleteName
+				)
+				if itemToDestroy then
+					local success = pcall(function()
+						local fullName = itemToDestroy:GetFullName()
+						itemToDestroy:Destroy()
+						task.wait()
+					end)
+					if success then
+						return true
+					else
+						return false
+					end
+				end
+			end
+		end
+		return false
+	end
+	for _, entry in ipairs(blacklist) do
+		local pathString
+		local count = 1
+		if type(entry) == 'string' then
+			pathString = entry
+		elseif type(entry) == 'table' and #entry >= 1 and type(entry[1]) == 'string' then
+			pathString = entry[1]
+			if #entry >= 2 and type(entry[2]) == 'number' and entry[2] > 0 then
+				count = math.floor(entry[2])
+				if count <= 0 then count = 1 end
+			end
+		else
+			continue
+		end
+		for i = 1, count do
+			local destroyedOne = tryDestroyPath(pathString)
+			if not destroyedOne then
+				break
+			end
+		end
+	end
+end)
+
+-- END OPTIMIZE --
+
+------------------
+---[Task Spawn]---
+------------------
+
+if getgenv().AdminConfig["Cleanup Objects"] == true or getgenv().AdminConfig["Cleanup Objects"] == nil then
+    task.spawn(cleanupWS)
+    -- task.spawn(cleanupRS)
+end
+
+if getgenv().AdminConfig["Optimize"] == true or getgenv().AdminConfig["Optimize"] == nil then
+    task.spawn(optimizeAll)
+end
+
+if getgenv().AdminConfig["White Screen"] == true or getgenv().AdminConfig["White Screen"] == nil then
+    pcall(disableRendering)
+end
+
+if getgenv().AdminConfig["Low Settings"] == true or getgenv().AdminConfig["Low Settings"] == nil then
+    pcall(lowSettingsRoblox)
+    pcall(lowSettingsGAG)
+end
+
+if getgenv().AdminConfig["Clear Services"] == true or getgenv().AdminConfig["Clear Services"] == nil then
+    task.spawn(clearServices)
+end
+
+function GAG:GetPlantedEggObjects()
+    local eggs = {}
+    local data = dataService:GetData()
+    if data and data.SaveSlots and data.SaveSlots.AllSlots and data.SaveSlots.SelectedSlot then
+        local selectedSlot = data.SaveSlots.SelectedSlot
+        local savedObjects = data.SaveSlots.AllSlots[selectedSlot] and data.SaveSlots.AllSlots[selectedSlot].SavedObjects
+        if savedObjects then
+            for _, object in pairs(savedObjects) do
+                if object.ObjectType == "PetEgg" then
+                    table.insert(eggs, object)
+                end
+            end
+        end
+    end
+    return eggs
+end
+
+function GAG:GetMaxEggsInFarm()
+    local data = dataService:GetData()
+    return data and data.PetsData and data.PetsData.MutableStats and data.PetsData.MutableStats.MaxEggsInFarm or 8
+end
+
+function GAG:IsInventoryFull()
+    return inventoryService:IsMaxInventory()
+end
+
+-- *** HÀM BỊ THIẾU ĐÃ ĐƯỢC THÊM VÀO ĐÂY ***
+function GAG:GetMaxPets()
+    local data = dataService:GetData()
+    -- Lấy số pet tối đa từ dữ liệu game, nếu không có thì mặc định là 60
+    return data and data.PetsData and data.PetsData.MutableStats and data.PetsData.MutableStats.MaxPets or 60
+end
+
+function GAG:GetMaxEquippedPets()
+    local data = dataService:GetData()
+    return data and data.PetsData and data.PetsData.MutableStats and data.PetsData.MutableStats.MaxEquippedPets or 0
+end
+
+function GAG:GetPetByUUID(petUUID)
+    local data = dataService:GetData()
+    if not (data and data.PetsData and data.PetsData.PetInventory and data.PetsData.PetInventory.Data) then return nil end
+    local petData = data.PetsData.PetInventory.Data[petUUID]
+    if petData then
+        petData.UUID = petUUID
+        petData.EquipPet = function(self, spawnCFrame) gameEvents.PetsService:FireServer("EquipPet", self.UUID, spawnCFrame) end
+        petData.UnequipPet = function(self) gameEvents.PetsService:FireServer("UnequipPet", self.UUID) end
+    end
+    return petData
+end
+
+function GAG:GetEquippedPets()
+    local equippedUUIDs = (dataService:GetData().PetsData and dataService:GetData().PetsData.EquippedPets) or {}
+    local petItems = {}
+    for _, uuid in ipairs(equippedUUIDs) do
+        local pet = self:GetPetByUUID(uuid)
+        if pet then table.insert(petItems, pet) end
+    end
+    return petItems
+end
+
+function GAG:GetPetsInInventory()
+    local allPetsData = (dataService:GetData().PetsData and dataService:GetData().PetsData.PetInventory.Data) or {}
+    local petItems = {}
+    for uuid, _ in pairs(allPetsData) do
+        local pet = self:GetPetByUUID(uuid)
+        if pet then table.insert(petItems, pet) end
+    end
+    return petItems
+end
+
+function GAG:GetShecklesCurrency()
+    local data = dataService:GetData()
+    -- Đường dẫn đúng dựa theo log của bạn là data.Sheckles
+    return (data and data.Sheckles) or 0
+end
+
+local plant_data = {
+    locations = {
+        ["Plant"] = {
+            [1] = {
+                -- [1] = "12, 0, -105",
+                [1] = "56, 0, -105"
+            },
+            [2] = {
+                -- [1] = "56, 0, 77"
+                [1] = "12, 0, 77"
+            },
+            [3] = {
+                -- [1] = "-122, 0, -105"
+                [1] = "-77, 0, -105"
+            },
+            [4] = {
+                -- [1] = "-77, 0, 77"
+                [1] = "-122, 0, 77"
+            },
+            [5] = {
+                -- [1] = "-258, 0, -105"
+                [1] = "-213, 0, -105"
+            },
+            [6] = {
+                -- [1] = "-213, 0, 77"
+                [1] = "-258, 0, 77"
+            }
+        },
+        ["Place Egg"] = {
+            [1] = {
+                [1] = "3, 0, -105",
+                [2] = "6, 0, -105",
+                [3] = "9, 0, -105",
+                [4] = "12, 0, -105",
+                [5] = "14, 0, -105",
+                [6] = "16, 0, -105",
+                [7] = "18, 0, -105",
+                [8] = "18, 0, -102",
+            },
+            [2] = {
+                [1] = "3, 0, 77",
+                [2] = "6, 0, 77",
+                [3] = "9, 0, 77",
+                [4] = "12, 0, 77",
+                [5] = "14, 0, 77",
+                [6] = "16, 0, 77",
+                [7] = "18, 0, 77",
+                [8] = "18, 0, 75",
+            },
+            [3] = {
+                [1] = "-71, 0, -105",
+                [2] = "-73, 0, -105",
+                [3] = "-75, 0, -105",
+                [4] = "-77, 0, -105",
+                [5] = "-79, 0, -105",
+                [6] = "-81, 0, -105",
+                [7] = "-83, 0, -105",
+                [8] = "-83, 0, -102",
+            },
+            [4] = {
+                [1] = "-71, 0, 77",
+                [2] = "-73, 0, 77",
+                [3] = "-75, 0, 77",
+                [4] = "-77, 0, 77",
+                [5] = "-79, 0, 77",
+                [6] = "-81, 0, 77",
+                [7] = "-83, 0, 77",
+                [8] = "-83, 0, 75",
+            },
+            [5] = {
+                [1] = "-207, 0, -105",
+                [2] = "-209, 0, -105",
+                [3] = "-211, 0, -105",
+                [4] = "-213, 0, -105",
+                [5] = "-215, 0, -105",
+                [6] = "-217, 0, -105",
+                [7] = "-219, 0, -105",
+                [8] = "-221, 0, -102",
+            },
+            [6] = {
+                [1] = "-207, 0, 77",
+                [2] = "-209, 0, 77",
+                [3] = "-211, 0, 77",
+                [4] = "-213, 0, 77",
+                [5] = "-215, 0, 77",
+                [6] = "-217, 0, 77",
+                [7] = "-219, 0, 77",
+                [8] = "-221, 0, 75",
+            },
+        }
+    },
+}
+
+-- ==================================================
+-- HELPER FUNCTIONS
+-- ==================================================
+
+local function getMyFarmIndex()
+    local farmParent = workspace:FindFirstChild("Farm")
+    if not farmParent then return nil end
+    for _, farmFolder in ipairs(farmParent:GetChildren()) do
+        local important = farmFolder:FindFirstChild("Important")
+        if important then
+            local dataFolder = important:FindFirstChild("Data")
+            if dataFolder and dataFolder:FindFirstChild("Owner") and dataFolder:FindFirstChild("Farm_Number") then
+                if dataFolder.Owner.Value == LocalPlayer.Name then
+                    local val = dataFolder.Farm_Number.Value
+                    local idx = (type(val) == "string") and tonumber(val) or val
+                    if type(idx) == "number" then
+                        return idx
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function findTool(toolName, toolType)
+    local lowerName = toolName:lower()
+    local pattern = "^" .. lowerName
+    if toolType == "seed" then
+        pattern = pattern .. "%s*seed"
+    elseif toolType == "egg" then
+    end
+
+    for _, container in ipairs({LocalPlayer.Backpack, LocalPlayer.Character}) do
+        if container then
+            for _, t in ipairs(container:GetChildren()) do
+                if t:IsA("Tool") and t.Name:lower():match(pattern) then
+                    return t
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- ==================================================
+-- AUTOMATION TASKS
+-- ==================================================
+
+--- Task: Auto Unlock Pet/Egg Slots
+local function autoUnlockSlots()
+    -- print("[DEBUG] Starting autoUnlockSlots")
+    
+    local levelRequirements = {
+        [0] = 20,
+        [1] = 30,
+        [2] = 45,
+        [3] = 60,
+        [4] = 75
+    }
+    -- print("[DEBUG] Level Requirements loaded")
+
+    local data = dataService:GetData()
+    if not (data and data.PetsData) then
+        -- print("[DEBUG] No PetsData available, returning")
+        return
+    end
+    -- print("[DEBUG] Player data loaded")
+
+    local currentPetSlots = data.PetsData.PurchasedEquipSlots or 0
+    local currentEggSlots = data.PetsData.PurchasedEggSlots or 0
+    local targetPetSlots = Config["Unlock Pet Slots"] or 0
+    local targetEggSlots = Config["Unlock Egg Slots"] or 0
+    -- print("[DEBUG] Current Pet Slots:", currentPetSlots, "Target:", targetPetSlots)
+    -- print("[DEBUG] Current Egg Slots:", currentEggSlots, "Target:", targetEggSlots)
+
+    local function isPetEquipped(petUUID)
+        local equippedPets = data.PetsData.EquippedPets or {}
+        for _, equippedUUID in ipairs(equippedPets) do
+            if equippedUUID == petUUID then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function findSuitablePet(levelReq)
+        -- print("[DEBUG] Finding suitable pet for level req:", levelReq)
+        local allPets = GAG:GetPetsInInventory()
+        -- print("[DEBUG] Total owned pets:", #allPets)
+        
+        for i, pet in ipairs(allPets) do
+            -- print("[DEBUG] Checking pet " .. i .. ": Type=" .. pet.PetType .. ", Level=" .. (pet.PetData.Level or 0) .. ", UUID=" .. pet.UUID)
+            if pet.PetData and pet.PetData.Level and pet.PetData.Level >= levelReq then
+                -- print("[DEBUG] Found suitable pet: Type=" .. pet.PetType .. ", Level=" .. pet.PetData.Level .. ", UUID=" .. pet.UUID)
+                return pet
+            end
+        end
+        -- print("[DEBUG] No suitable pet found for level req:", levelReq)
+        return nil
+    end
+
+    local function performUnlock(pet, slotType)
+        -- print("[DEBUG] Performing unlock for pet UUID:", pet.UUID, "Slot Type:", slotType)
+        
+        if isPetEquipped(pet.UUID) then
+            -- print("[DEBUG] Pet is equipped, unequipping UUID:", pet.UUID)
+            local unequipArgs = { "UnequipPet", pet.UUID }
+            game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("PetsService"):FireServer(unpack(unequipArgs))
+            task.wait(1.5)
+        else
+            -- print("[DEBUG] Pet not equipped, skipping unequip")
+        end
+
+        local unlockArgs = { pet.UUID, slotType }
+        -- print("[DEBUG] Firing UnlockSlotFromPet with args: UUID=" .. unlockArgs[1] .. ", Type=" .. unlockArgs[2])
+        game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("UnlockSlotFromPet"):FireServer(unpack(unlockArgs))
+        task.wait(1.5)
+        -- print("[DEBUG] Unlock performed for UUID:", pet.UUID)
+    end
+
+    if currentPetSlots < targetPetSlots and levelRequirements[currentPetSlots] then
+        -- print("[DEBUG] Attempting to unlock Pet slot")
+        local petForUnlock = findSuitablePet(levelRequirements[currentPetSlots])
+        if petForUnlock then 
+            performUnlock(petForUnlock, "Pet")
+            -- print("[DEBUG] Pet slot unlock completed")
+            return 
+        else
+            -- print("[DEBUG] No pet found for Pet slot unlock")
+        end
+    else
+        -- print("[DEBUG] No need to unlock Pet slot or max reached")
+    end
+
+    if currentEggSlots < targetEggSlots and levelRequirements[currentEggSlots] then
+        -- print("[DEBUG] Attempting to unlock Egg slot")
+        local petForUnlock = findSuitablePet(levelRequirements[currentEggSlots])
+        if petForUnlock then 
+            performUnlock(petForUnlock, "Egg")
+            -- print("[DEBUG] Egg slot unlock completed")
+            return 
+        else
+            -- print("[DEBUG] No pet found for Egg slot unlock")
+        end
+    else
+        -- print("[DEBUG] No need to unlock Egg slot or max reached")
+    end
+    
+    -- print("[DEBUG] autoUnlockSlots completed")
+end
+
+--- Task: Auto Buy Event Shop Items
+local function parseNumberWithSuffix(value)
+    value = tostring(value):lower()
+    local number = tonumber(value:match("[%d%.]+")) or 0
+
+    if value:find("k") then
+        return number * 1000
+    elseif value:find("m") then
+        return number * 1000000
+    elseif value:find("b") then
+        return number * 1000000000
+    elseif value:find("t") then
+        return number * 1000000000000
+    else
+        return number
+    end
+end
+
+local function autoBuyEventShop()
+    local itemsToBuy = Config["Buy Event Shop"]
+    if not itemsToBuy or #itemsToBuy == 0 then
+        return
+    end
+
+    local DataService = require(game:GetService("ReplicatedStorage").Modules.DataService)
+    local data = DataService:GetData()
+    local eventShopStock = data and data.EventShopStock and data.EventShopStock.Stocks
+
+    if not eventShopStock then
+        return
+    end
+
+    local buyEventShopRemote = game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("BuyEventShopStock")
+    local restockRemote = game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("BuyEventShopRestock")
+
+    local allBought = true
+    for _, itemName in ipairs(itemsToBuy) do
+        local itemData = eventShopStock[itemName]
+        if itemData and itemData.Stock > 0 then
+            buyEventShopRemote:FireServer(itemName)
+            task.wait(0.2)
+        elseif itemData then
+            allBought = false
+        end
+    end
+
+    if allBought then
+        local restockCost = data.EventShopStock.RestockCost
+        local sheckles = GAG:GetShecklesCurrency()
+
+        local maxRestockStr = UserConfig["Limit Event Restock Cost"] or "0"
+        local maxRestock = parseNumberWithSuffix(maxRestockStr)
+
+        if restockCost <= maxRestock and sheckles >= restockCost then
+            restockRemote:FireServer()
+            task.wait(0.2)
+        end
+    end
+end
+
+--- Task: Auto Buy Seed (Updated with Full Logging)
+local function autoBuySeed()
+    local function getSeedCountInBackpack(targetSeedName)
+        local backpack = game:GetService("Players").LocalPlayer.Backpack
+        local searchPattern = "^" .. targetSeedName .. " Seed"
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:IsA("Tool") and item.Name:match(searchPattern) then
+                local quantityString = item.Name:match("%[X(%d+)%]")
+                return quantityString and tonumber(quantityString) or 1
+            end
+        end
+        return 0
+    end
+
+    local data = dataService:GetData()
+    local seedStockData = data and data.SeedStock and data.SeedStock.Stocks
+    if not seedStockData then
+        return
+    end
+
+    for _, seedName in ipairs(Config["Buy Seed"]) do
+        local stockInfo = seedStockData[seedName]
+        if stockInfo then
+            local playerSeedCount = getSeedCountInBackpack(seedName)
+            
+            if playerSeedCount < 20 then
+                if stockInfo.Stock > 0 then
+                    buySeedRemote:FireServer(seedName)
+                    task.wait(0.1)
+                end
+            end
+        end
+    end
+end
+
+-- ==================================================
+-- UPDATED autoPlant: Always Remove Lower LayoutOrder Plants Regardless of Count + Plant Until No Seed or 800/800 + Debug Logs
+-- ==================================================
+
+--- Task: Auto Plant (Fixed nil error when replacing plants at limit)
+local function autoPlant()
+    local function getLayoutOrder(name)
+        for key, data in pairs(SeedData) do
+            if string.lower(key) == string.lower(name) then return data.LayoutOrder or 0 end
+        end
+        return 0
+    end
+    local function getPlayerFarmFolder()
+        local farmParent = workspace:FindFirstChild("Farm")
+        if not farmParent then return nil end
+        for _, farmFolder in ipairs(farmParent:GetChildren()) do
+            local important = farmFolder:FindFirstChild("Important")
+            if important and important.Data and important.Data.Owner.Value == LocalPlayer.Name then
+                return farmFolder
+            end
+        end
+        return nil
+    end
+    local farmFolder = getPlayerFarmFolder()
+    if not farmFolder then 
+        return 
+    end
+    local plantsPhysical = farmFolder.Important.Plants_Physical
+    if not plantsPhysical then 
+        return 
+    end
+    local plantLimit = (Config["Limit Plants"] and tonumber(Config["Limit Plants"])) or 800
+    local plantSpecificSeeds = #Config["Plant Seed"] > 0
+    local seedsToPlantQueue = {}
+    local wantedSeedsSet = {}
+    if plantSpecificSeeds then
+        for _, name in ipairs(Config["Plant Seed"]) do wantedSeedsSet[name] = true end
+    end
+    local backpack = LocalPlayer.Backpack
+    for _, tool in ipairs(backpack:GetChildren()) do
+        if tool:IsA("Tool") and tool.Name:find(" Seed") and not tool.Name:find(" Seed Pack") then
+            local baseName = tool.Name:match("^(.-) Seed")
+            if baseName and (plantSpecificSeeds == false or wantedSeedsSet[baseName]) then
+                local quantity = (tool.Name:match("%[X(%d+)%]") and tonumber(tool.Name:match("%[X(%d+)%]"))) or 1
+                local layout = getLayoutOrder(baseName)
+                for i = 1, quantity do
+                    table.insert(seedsToPlantQueue, { name = baseName, layoutOrder = layout })
+                end
+            end
+        end
+    end
+    if #seedsToPlantQueue == 0 then 
+        return 
+    end
+    table.sort(seedsToPlantQueue, function(a, b) return a.layoutOrder > b.layoutOrder end)
+    if plantSpecificSeeds then
+        local plantsToRemove = {}
+        for _, plant in ipairs(plantsPhysical:GetChildren()) do
+            if plant:IsA("Model") and not wantedSeedsSet[plant.Name] then
+                table.insert(plantsToRemove, plant)
+            end
+        end
+        if #plantsToRemove > 0 then
+            local shovel = findTool("Shovel")
+            if shovel then
+                LocalPlayer.Character.Humanoid:EquipTool(shovel)
+                task.wait(0.2)
+                for _, plantInstance in ipairs(plantsToRemove) do
+                    ReplicatedStorage.GameEvents.Remove_Item:FireServer(plantInstance:FindFirstChildOfClass("Part"))
+                    task.wait(0.2)
+                end
+            end
+        end
+    end
+    task.wait(1)
+    
+    -- Kiểm tra và xóa excess plants ngay từ đầu nếu vượt limit, trước khi trồng thêm
+    local currentPlantCount = 0
+    for _, child in ipairs(plantsPhysical:GetChildren()) do
+        if child:IsA("Model") then
+            currentPlantCount = currentPlantCount + 1
+        end
+    end
+    if currentPlantCount > plantLimit then
+        local plantsToRemove = {}
+        local plantsOnFarm = {}
+        for _, plant in ipairs(plantsPhysical:GetChildren()) do
+            if plant:IsA("Model") then
+                table.insert(plantsOnFarm, { instance = plant, layoutOrder = getLayoutOrder(plant.Name) })
+            end
+        end
+        table.sort(plantsOnFarm, function(a, b) return a.layoutOrder < b.layoutOrder end)
+        local excessCount = currentPlantCount - plantLimit
+        for i = 1, excessCount do
+            if plantsOnFarm[i] then
+                table.insert(plantsToRemove, plantsOnFarm[i].instance)
+            end
+        end
+        if #plantsToRemove > 0 then
+            local shovel = findTool("Shovel")
+            if shovel then
+                LocalPlayer.Character.Humanoid:EquipTool(shovel)
+                task.wait(0.2)
+                for _, plantInstance in ipairs(plantsToRemove) do
+                    ReplicatedStorage.GameEvents.Remove_Item:FireServer(plantInstance:FindFirstChildOfClass("Part"))
+                    task.wait(0.2)
+                end
+                task.wait(1)
+                currentPlantCount = 0
+                for _, child in ipairs(plantsPhysical:GetChildren()) do
+                    if child:IsA("Model") then
+                        currentPlantCount = currentPlantCount + 1
+                    end
+                end
+            end
+        end
+    end
+    
+    local farmIndex = getMyFarmIndex()
+    if not farmIndex then 
+        return 
+    end
+    local allPlantingPositions = {}
+    if plant_data.locations["Plant"][farmIndex] then
+        for _, locStr in ipairs(plant_data.locations["Plant"][farmIndex]) do
+            local nums = {}
+            for num in locStr:gmatch("([^,]+)") do table.insert(nums, tonumber(num)) end
+            table.insert(allPlantingPositions, Vector3.new(nums[1], nums[2], nums[3]))
+        end
+    end
+    if #allPlantingPositions == 0 then 
+        return 
+    end
+    
+    local seedQueueIndex = 1
+    if currentPlantCount < plantLimit then
+        while currentPlantCount < plantLimit and seedQueueIndex <= #seedsToPlantQueue do
+            local seedToPlant = seedsToPlantQueue[seedQueueIndex]
+            local seedTool = findTool(seedToPlant.name, "seed")
+            if seedTool then
+                LocalPlayer.Character.Humanoid:EquipTool(seedTool)
+                task.wait(0.1)
+                for _, pos in ipairs(allPlantingPositions) do 
+                    plantRemote:FireServer(pos, seedToPlant.name) 
+                    currentPlantCount = currentPlantCount + 1
+                    if currentPlantCount >= plantLimit then break end
+                end
+                task.wait(0.2)
+            else
+            end
+            seedQueueIndex = seedQueueIndex + 1
+        end
+    end
+    local plantsOnFarm = {}
+    for _, plant in ipairs(plantsPhysical:GetChildren()) do
+        if plant:IsA("Model") then 
+            table.insert(plantsOnFarm, { instance = plant, layoutOrder = getLayoutOrder(plant.Name) }) 
+        end
+    end
+    table.sort(plantsOnFarm, function(a, b) return a.layoutOrder < b.layoutOrder end)
+    local plantToRemoveIndex = 1
+    local shovel = findTool("Shovel")
+    for i = seedQueueIndex, #seedsToPlantQueue do
+        local seedToPlant = seedsToPlantQueue[i] 
+        if plantToRemoveIndex > #plantsOnFarm then 
+            break 
+        end
+        
+        local plantToRemoveData = plantsOnFarm[plantToRemoveIndex]
+        if seedToPlant.layoutOrder > plantToRemoveData.layoutOrder then
+            if shovel then
+                local positionToPlantAt = plantToRemoveData.instance:FindFirstChildOfClass("Part").Position
+                LocalPlayer.Character.Humanoid:EquipTool(shovel)
+                task.wait(0.1)
+                ReplicatedStorage.GameEvents.Remove_Item:FireServer(plantToRemoveData.instance:FindFirstChildOfClass("Part"))
+                task.wait(0.2)
+                
+                local seedTool = findTool(seedToPlant.name, "seed")
+                if seedTool then
+                    LocalPlayer.Character.Humanoid:EquipTool(seedTool)
+                    task.wait(0.1)
+                    plantRemote:FireServer(positionToPlantAt, seedToPlant.name)
+                    task.wait(0.2)
+                end
+                plantToRemoveIndex = plantToRemoveIndex + 1
+            else
+                break
+            end
+        else
+            break
+        end
+    end
+
+    if LocalPlayer.Character and LocalPlayer.Character.Humanoid then
+        LocalPlayer.Character.Humanoid:UnequipTools()
+    end
+end
+
+--- Task: Auto Harvest (Prioritize Corrupt or Tranquil, then DoneGrowTime)
+local function autoHarvest()
+    local harvestCount = 0
+
+    -- Helper function to get the LayoutOrder from SeedData
+    local function getLayoutOrder(name)
+        for key, data in pairs(SeedData) do
+            if string.lower(key) == string.lower(name) then
+                return data.LayoutOrder or 0
+            end
+        end
+        return 0
+    end
+
+    g_inventoryFull = GAG:IsInventoryFull()
+    if g_inventoryFull then
+        return -- Exit early if inventory is already full
+    end
+
+    local function getPlayerFarmFolder()
+        -- (implementation is correct)
+        local farmParent = workspace:FindFirstChild("Farm")
+        if not farmParent then return nil end
+        for _, farmFolder in ipairs(farmParent:GetChildren()) do
+            local important = farmFolder:FindFirstChild("Important")
+            if important and important.Data and important.Data.Owner.Value == player.Name then
+                return farmFolder
+            end
+        end
+        return nil
+    end
+
+    local function harvestLoop()
+        local farmFolder = getPlayerFarmFolder()
+        if not farmFolder then return end
+
+        local PlantsPhysical = farmFolder.Important.Plants_Physical
+        if not PlantsPhysical then return end
+
+        -- 1. Gather all plants and their LayoutOrder
+        local plantsToHarvest = {}
+        for _, plantInstance in ipairs(PlantsPhysical:GetChildren()) do
+            if plantInstance:IsA("Model") then
+                local layout = getLayoutOrder(plantInstance.Name)
+                table.insert(plantsToHarvest, { instance = plantInstance, layoutOrder = layout })
+            end
+        end
+
+        -- 2. Sort plants by LayoutOrder descending (highest first)
+        table.sort(plantsToHarvest, function(a, b)
+            return a.layoutOrder > b.layoutOrder
+        end)
+
+        -- This helper function now includes a debug log
+        local function doHarvest(item)
+            -- *** NEW DEBUG LOG IS HERE ***
+            -- In ra tên của vật phẩm đang được thu hoạch
+            -- print(string.format("[AutoHarvest] Đang thu hoạch: %s", item.Name))
+
+            ByteNetReliable:FireServer(buffer.fromstring("\001\001\000\001"), { item })
+            harvestCount = harvestCount + 1
+            if harvestCount >= 100 then
+                task.wait(2)
+                harvestCount = 0
+            end
+        end
+
+        -- 3. Loop through the SORTED list to harvest
+        for _, plantData in ipairs(plantsToHarvest) do
+            local plant = plantData.instance 
+
+            if GAG:IsInventoryFull() then
+                g_inventoryFull = true
+                break
+            end
+            task.wait(0.01)
+
+            local growFolder = plant:FindFirstChild("Grow")
+            local ageVal = growFolder and growFolder:FindFirstChild("Age")
+            local maxAgeAttr = plant:GetAttribute("MaxAge")
+            local maxAgeVal = maxAgeAttr or (plant:FindFirstChild("MaxAge") and plant.MaxAge.Value)
+
+            if ageVal and maxAgeVal and ageVal.Value >= maxAgeVal then
+                local fruitsFolder = plant:FindFirstChild("Fruits")
+                if fruitsFolder then
+                    for _, fruit in ipairs(fruitsFolder:GetChildren()) do
+                        if GAG:IsInventoryFull() then
+                            g_inventoryFull = true
+                            break
+                        end
+                        doHarvest(fruit)
+                    end
+                else
+                    doHarvest(plant)
+                end
+            end
+        end
+    end
+
+    harvestLoop()
+    g_inventoryFull = GAG:IsInventoryFull()
+end
+
+--- Task: Auto Collect Honey (Swarm Event)
+local function autoCollectHoney()
+    local label = workspace:FindFirstChild("HoneyEvent") and workspace.HoneyEvent:FindFirstChild("HoneyCombpressor") and workspace.HoneyEvent.HoneyCombpressor:FindFirstChild("Sign") and workspace.HoneyEvent.HoneyCombpressor.Sign:FindFirstChild("SurfaceGui") and workspace.HoneyEvent.HoneyCombpressor.Sign.SurfaceGui:FindFirstChild("TextLabel")
+    if not label then return end
+
+    local function findPollinatedTool()
+        for _, container in ipairs({ LocalPlayer.Backpack, LocalPlayer.Character }) do
+            if container then
+                for _, tool in ipairs(container:GetChildren()) do
+                    if tool:IsA("Tool") and tool:GetAttribute("Pollinated") == true then
+                        return tool
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    local text = label.Text
+    if text:match("%d+:%d+") then
+        return
+    end
+
+    local tool = findPollinatedTool()
+    if tool and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        humanoid:EquipTool(tool)
+        task.wait(0.2)
+
+        if Config.UnfavoriteAfterHoney then
+            favoriteRemote:FireServer(tool)
+            task.wait(0.1)
+        end
+
+        honeyMachineService:FireServer("MachineInteract")
+        task.wait(1)
+    end
+end
+
+--- Task: Remove Texture Plants
+local function processObject(object)
+    for _, descendant in pairs(object:GetDescendants()) do
+        if descendant.ClassName == "Part" then
+            if descendant.Transparency == 0 then
+                descendant.Transparency = 1
+            end
+            if descendant.BrickColor ~= BrickColor.new("White") then
+                descendant.BrickColor = BrickColor.new("White")
+            end
+            if descendant.Color ~= Color3.new(1, 1, 1) then
+                descendant.Color = Color3.new(1, 1, 1)
+            end
+            if descendant.CastShadow == true then
+                descendant.CastShadow = false
+            end
+        elseif descendant.ClassName == "ParticleEmitter" then
+            if descendant.Brightness == 1 then
+                descendant.Brightness = 0
+            end
+            if descendant.LightEmission == 1 then
+                descendant.LightEmission = 0
+            end
+            if descendant.LightInfluence == 1 then
+                descendant.LightInfluence = 0
+            end
+            if descendant.Texture ~= "" then
+                descendant.Texture = ""
+            end
+            if descendant.Transparency ~= NumberSequence.new(1) then
+                descendant.Transparency = NumberSequence.new(1)
+            end
+            if descendant.ZOffset ~= 0 then
+                descendant.ZOffset = 0
+            end
+        elseif descendant.ClassName == "MeshPart" then
+            if descendant.Transparency == 0 then
+                descendant.Transparency = 1
+            end
+            if descendant.BrickColor ~= BrickColor.new("White") then
+                descendant.BrickColor = BrickColor.new("White")
+            end
+            if descendant.Color ~= Color3.new(1, 1, 1) then
+                descendant.Color = Color3.new(1, 1, 1)
+            end
+            if descendant.CastShadow == true then
+                descendant.CastShadow = false
+            end
+            if descendant.MeshId ~= "" then
+                descendant.MeshId = ""
+            end
+            if descendant.TextureID ~= "" then
+                descendant.TextureID = ""
+            end
+            if descendant.MaterialVariant ~= "" then
+                descendant.MaterialVariant = ""
+            end
+        elseif descendant.ClassName == "UnionOperation" then
+            if descendant.Transparency == 0 then
+                descendant.Transparency = 1
+            end
+            if descendant.BrickColor ~= BrickColor.new("White") then
+                descendant.BrickColor = BrickColor.new("White")
+            end
+            if descendant.Color ~= Color3.new(1, 1, 1) then
+                descendant.Color = Color3.new(1, 1, 1)
+            end
+            if descendant.CastShadow == true then
+                descendant.CastShadow = false
+            end
+        end
+    end
+end
+
+local function autoHidePlants()
+    local plantsPhysical = workspace.Farm.Farm.Important.Plants_Physical
+    -- local visuals = workspace.Visuals
+    -- local petsPhysical = workspace.PetsPhysical
+    processObject(plantsPhysical)
+    -- processObject(visuals)
+    -- processObject(petsPhysical)
+end
+
+--- Task: Hide UI
+local function disableScreenGuis()
+    local targetGuis = {
+        game:GetService("Players").LocalPlayer.PlayerGui.ActivePetUI,
+        game:GetService("Players").LocalPlayer.PlayerGui.AnimationUI,
+        game:GetService("Players").LocalPlayer.PlayerGui.BackpackGui,
+        game:GetService("Players").LocalPlayer.PlayerGui.Bottom_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.Cmdr,
+        game:GetService("Players").LocalPlayer.PlayerGui.ConfirmPetEggPurchase,
+        game:GetService("Players").LocalPlayer.PlayerGui.ConfirmSprinkler,
+        game:GetService("Players").LocalPlayer.PlayerGui.ConfirmToolPlacement,
+        game:GetService("Players").LocalPlayer.PlayerGui.CosmeticShop_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.CosmeticUI,
+        game:GetService("Players").LocalPlayer.PlayerGui.CraftingCancel,
+        game:GetService("Players").LocalPlayer.PlayerGui.DailyQuests_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.Data,
+        game:GetService("Players").LocalPlayer.PlayerGui.DevConsoleMaster,
+        game:GetService("Players").LocalPlayer.PlayerGui.DinoQuests_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.DnaMachineUpgradeUI,
+        game:GetService("Players").LocalPlayer.PlayerGui.EggRarityDisplay_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.EventShop_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.ExperienceNotifications,
+        game:GetService("Players").LocalPlayer.PlayerGui.FarmCulling,
+        game:GetService("Players").LocalPlayer.PlayerGui.FreeSeedSack_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.FriendBoost,
+        game:GetService("Players").LocalPlayer.PlayerGui.FriendInvites,
+        game:GetService("Players").LocalPlayer.PlayerGui.Friend_Notification,
+        game:GetService("Players").LocalPlayer.PlayerGui.FruitMutation_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.GearHover_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.Gear_Shop,
+        game:GetService("Players").LocalPlayer.PlayerGui.GiftPlayerList,
+        game:GetService("Players").LocalPlayer.PlayerGui.Gift_Notification,
+        game:GetService("Players").LocalPlayer.PlayerGui.HoldToCollect,
+        game:GetService("Players").LocalPlayer.PlayerGui.Honey_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.Hud_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.InspectPrompt,
+        game:GetService("Players").LocalPlayer.PlayerGui.Intro_SCREEN,
+        game:GetService("Players").LocalPlayer.PlayerGui.Notifications,
+        game:GetService("Players").LocalPlayer.PlayerGui.Odds_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.PetEggTutorial,
+        game:GetService("Players").LocalPlayer.PlayerGui.PetEquipSlots_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.PetMutationCancel,
+        game:GetService("Players").LocalPlayer.PlayerGui.PetMutationOdds_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.PetShop_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.PetUI,
+        game:GetService("Players").LocalPlayer.PlayerGui.PickupTally,
+        game:GetService("Players").LocalPlayer.PlayerGui.PlantHover_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.Pop_Effect,
+        game:GetService("Players").LocalPlayer.PlayerGui.ProximityPrompts,
+        game:GetService("Players").LocalPlayer.PlayerGui.RecipeSelection_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.ReclaimPrompt,
+        game:GetService("Players").LocalPlayer.PlayerGui.Rejoin_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.RollCrate_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.SaveSlotUI,
+        game:GetService("Players").LocalPlayer.PlayerGui.ScreenGui,
+        game:GetService("Players").LocalPlayer.PlayerGui.Seed_Shop,
+        game:GetService("Players").LocalPlayer.PlayerGui.SettingsUI,
+        game:GetService("Players").LocalPlayer.PlayerGui.Sheckles_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.Shop_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.ShovelPrompt,
+        game:GetService("Players").LocalPlayer.PlayerGui.ShowCrateOdds,
+        game:GetService("Players").LocalPlayer.PlayerGui.SkipCutscene,
+        game:GetService("Players").LocalPlayer.PlayerGui.StarterPack_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.SummerCoins_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.SummerRewards_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.Teleport_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.Top_Notification,
+        game:GetService("Players").LocalPlayer.PlayerGui.TopbarCentered,
+        game:GetService("Players").LocalPlayer.PlayerGui.TopbarCenteredClipped,
+        game:GetService("Players").LocalPlayer.PlayerGui.TopbarStandard,
+        game:GetService("Players").LocalPlayer.PlayerGui.TopbarStandardClipped,
+        game:GetService("Players").LocalPlayer.PlayerGui.Trading,
+        game:GetService("Players").LocalPlayer.PlayerGui.TravelingMerchantShop_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.Trowel_Client,
+        game:GetService("Players").LocalPlayer.PlayerGui.Tutorial_UI,
+        game:GetService("Players").LocalPlayer.PlayerGui.Version_UI,
+    }
+	for _, guiObject in pairs(targetGuis) do
+		if guiObject and guiObject:IsA("ScreenGui") and guiObject.Enabled then
+			guiObject.Enabled = false
+		end
+	end
+end
+
+--- Task: Auto Event Zen
+local function eventZen()
+    local data = dataService:GetData()
+    local sheckles = GAG:GetShecklesCurrency()
+    if sheckles > 1000 then
+        if data.SpecialCurrency.Chi >= 300 then
+            local args = {
+                "SubmitAllPlants"
+            }
+            game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("ZenQuestRemoteEvent"):FireServer(unpack(args))
+        else
+            local args = {
+                "SubmitAllPlants"
+            }
+            game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("ZenAuraRemoteEvent"):FireServer(unpack(args))
+        end
+    end
+end
+
+-- Function: Auto Submit To Fox (Kitsune)
+local function autoSubmitToFox()
+
+	local backpack = LocalPlayer.Backpack
+	local character = LocalPlayer.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+
+	local zenQuestEvent = game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("ZenQuestRemoteEvent")
+	local maxSubmitsPerType = 5
+
+	-- --- Phần 1: Nộp vật phẩm TRANQUIL ---
+	for i = 1, maxSubmitsPerType do
+		-- Lấy dữ liệu mới nhất để kiểm tra level
+		local data = dataService:GetData()
+		local tranquilLevel = (data and data.ZenEventData and data.ZenEventData.TranquilLevel) or 0
+		
+		-- Dừng nếu level đã tối đa
+		if tranquilLevel >= 5 then
+			break
+		end
+
+		-- Tìm một vật phẩm Tranquil
+		local tranquilTool = nil
+		for _, tool in ipairs(backpack:GetChildren()) do
+			if tool:IsA("Tool") and (tool:GetAttribute("Tranquil") or false) then
+				tranquilTool = tool
+				break
+			end
+		end
+
+		-- Nếu tìm thấy, nộp nó. Nếu không, dừng vòng lặp này.
+		if tranquilTool then
+			humanoid:EquipTool(tranquilTool)
+			task.wait(0.5)
+			zenQuestEvent:FireServer("SubmitToFox")
+			task.wait(0.5)
+		else
+			break -- Không còn vật phẩm Tranquil để nộp
+		end
+	end
+
+	-- --- Phần 2: Nộp vật phẩm CORRUPT ---
+	for i = 1, maxSubmitsPerType do
+		-- Lấy dữ liệu mới nhất để kiểm tra level
+		local data = dataService:GetData()
+		local corruptionLevel = (data and data.ZenEventData and data.ZenEventData.CorruptionLevel) or 0
+
+		-- Dừng nếu level đã tối đa
+		if corruptionLevel >= 5 then
+			break
+		end
+
+		-- Tìm một vật phẩm Corrupt
+		local corruptTool = nil
+		for _, tool in ipairs(backpack:GetChildren()) do
+			if tool:IsA("Tool") and (tool:GetAttribute("Corrupt") or false) then
+				corruptTool = tool
+				break
+			end
+		end
+
+		-- Nếu tìm thấy, nộp nó. Nếu không, dừng vòng lặp này.
+		if corruptTool then
+			humanoid:EquipTool(corruptTool)
+			task.wait(0.5)
+			zenQuestEvent:FireServer("SubmitToFox")
+			task.wait(0.5)
+		else
+			break -- Không còn vật phẩm Corrupt để nộp
+		end
+	end
+	
+	-- Bỏ trang bị bất kỳ công cụ nào còn lại ở cuối
+	humanoid:UnequipTools()
+end
+
+--- Task: Auto Sell (Updated with Plant Count Logic)
+local function autoSell()
+    local function getPlayerFarmFolder()
+        local farmParent = workspace:FindFirstChild("Farm")
+        if not farmParent then return nil end
+        for _, farmFolder in ipairs(farmParent:GetChildren()) do
+            local important = farmFolder:FindFirstChild("Important")
+            if important and important.Data and important.Data.Owner.Value == LocalPlayer.Name then
+                return farmFolder
+            end
+        end
+        return nil
+    end
+
+    local farmFolder = getPlayerFarmFolder()
+    local plantCount = 0
+    if farmFolder and farmFolder.Important and farmFolder.Important.Plants_Physical then
+        plantCount = #farmFolder.Important.Plants_Physical:GetChildren()
+    end
+
+    local shouldProceedToSell = false
+    if getgenv().InventoryFull then
+        shouldProceedToSell = true
+    else
+        shouldProceedToSell = true
+    end
+
+    if not shouldProceedToSell then
+        return
+    end
+
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local sellCFrame = CFrame.new(86.5854721, 2.97185373, 0.426784277, 1.7411641e-16, 1.07745741e-07, -1, -1.02299481e-10, 1, 1.07745741e-07, 1, 1.02299481e-10, 1.85138744e-16)
+    hrp.CFrame = sellCFrame
+    task.wait(1)
+    SellInventoryRemote:FireServer()
+    task.wait(1)
+    hrp.CFrame = workspace.Farm.Farm.Center_Point.CFrame
+
+    getgenv().InventoryFull = false
+end
+
+--- Task: Auto Use Seed Packs (Updated to include Kitsune Chest opening)
+local function autoUseSeedPacks()
+    local LocalPlayer = game:GetService("Players").LocalPlayer
+    local Backpack = LocalPlayer.Backpack
+    local seedPacksToUse = {}
+    local kitsuneChestsToOpen = {}
+    
+    -- Collect Seed Packs
+    for _, tool in ipairs(Backpack:GetChildren()) do
+        if tool:IsA("Tool") and tool.Name:find("Seed Pack") then
+            table.insert(seedPacksToUse, tool)
+        end
+    end
+    
+    -- Collect Kitsune Chests
+    for _, tool in ipairs(Backpack:GetChildren()) do
+        if tool:IsA("Tool") and tool.Name:find("Kitsune Chest") then
+            table.insert(kitsuneChestsToOpen, tool)
+        end
+    end
+
+    local itemsToProcess = {}
+    
+    -- Add Seed Packs to process list
+    for _, packTool in ipairs(seedPacksToUse) do
+        table.insert(itemsToProcess, packTool)
+    end
+    
+    -- Add Kitsune Chests to process list
+    for _, chestTool in ipairs(kitsuneChestsToOpen) do
+        table.insert(itemsToProcess, chestTool)
+    end
+
+    if #itemsToProcess == 0 then
+        return
+    end
+
+    local character = LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid then
+        return
+    end
+
+    for _, itemTool in ipairs(itemsToProcess) do
+        humanoid:EquipTool(itemTool)
+        task.wait(0.5)
+
+        if itemTool.Parent == character then
+            itemTool:Activate()
+            task.wait(0.5)
+        else
+        end
+    end
+
+    humanoid:UnequipTools()
+end
+
+--- Task: Auto Buy Gear (Updated with Full Logging)
+local function autoBuyGear()
+    local data = dataService:GetData()
+    local gearStockData = data and data.GearStock and data.GearStock.Stocks
+    if not gearStockData then
+        return
+    end
+
+    for _, gearName in ipairs(Config["Buy Gear"]) do
+        if not findTool(gearName) then
+            local stockInfo = gearStockData[gearName]
+            if stockInfo and stockInfo.Stock > 0 then
+                buyGearRemote:FireServer(gearName)
+                task.wait(0.2)
+            end
+        end
+    end
+end
+
+-- ==================================================
+-- NEW: Auto Gear Place (Sprinkler)
+-- ==================================================
+local function autoGear()
+    local farmIndex = getMyFarmIndex()
+    if not farmIndex then return end
+
+    local precomputedPlantPositions = {}
+    for i, locList in pairs(plant_data.locations["Plant"]) do
+        precomputedPlantPositions[i] = {}
+        for _, locStr in ipairs(locList) do
+            local nums = {}
+            for num in locStr:gmatch("([^,]+)") do
+                nums[#nums+1] = tonumber(num)
+            end
+            precomputedPlantPositions[i][#precomputedPlantPositions[i]+1] = Vector3.new(nums[1], nums[2], nums[3])
+        end
+    end
+
+    local positions = precomputedPlantPositions[farmIndex]
+    if not positions then return end
+
+    local sprinklerTool = nil
+    for _, container in ipairs({game:GetService("Players").LocalPlayer.Backpack, game:GetService("Players").LocalPlayer.Character}) do
+        if container then
+            for _, tool in ipairs(container:GetChildren()) do
+                if tool:IsA("Tool") and tool.Name:lower():find("sprinkler") then
+                    sprinklerTool = tool
+                    break
+                end
+            end
+        end
+    end
+
+    if not sprinklerTool then
+        return
+    end
+
+    if game:GetService("Players").LocalPlayer.Character and game:GetService("Players").LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        game:GetService("Players").LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):EquipTool(sprinklerTool)
+        task.wait(0.2)
+    end
+
+    for _, pos in ipairs(positions) do
+        local args = {
+            "Create",
+            CFrame.new(pos.X, 3, pos.Z)
+        }
+        game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("SprinklerService"):FireServer(unpack(args))
+        task.wait(0.2)
+    end
+end
+
+--- Task: Auto Buy Egg (Updated with Full Logging)
+local function autoBuyEgg()
+
+    local function getEggStocks()
+        local data = DataSer:GetData()
+        return (data.PetEggStock and data.PetEggStock.Stocks) or {}
+    end
+
+    local stocks = getEggStocks()
+    if not stocks or #stocks == 0 then
+        return
+    end
+
+    for idx, info in ipairs(stocks) do
+        if table.find(Config["Buy Egg"], info.EggName) then
+            if info.Stock and info.Stock > 0 then
+                local args = {info.EggName}
+                local success, err = pcall(function()
+                    buyPetEggRemote:FireServer(unpack(args))
+                end)
+                task.wait(0.2)
+            end
+        end
+    end
+end
+
+--- Task: Auto Place Egg (Handles both specific and all-egg placing)
+local function autoPlaceEgg()
+    local farmIndexNow = getMyFarmIndex()
+    if not farmIndexNow then
+        return
+    end
+
+    local eggPositions = plant_data.locations["Place Egg"][farmIndexNow]
+    if not eggPositions then
+        return
+    end
+
+    local maxEggs = GAG:GetMaxEggsInFarm()
+
+    local eggToolsToPlace = {}
+    local placeSpecificEggs = Config["Place Egg"] and #Config["Place Egg"] > 0
+
+    if placeSpecificEggs then
+        for _, eggName in ipairs(Config["Place Egg"]) do
+            local tool = findTool(eggName, "egg")
+            if tool then
+                table.insert(eggToolsToPlace, tool)
+            end
+        end
+    else
+        for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
+            if tool:IsA("Tool") and tool.Name:find(" Egg") then
+                table.insert(eggToolsToPlace, tool)
+            end
+        end
+    end
+
+    if #eggToolsToPlace == 0 then
+        return
+    end
+
+    for _, tool in ipairs(eggToolsToPlace) do
+        if #GAG:GetPlantedEggObjects() >= maxEggs then
+            break
+        end
+
+        if not (LocalPlayer.Character and LocalPlayer.Character.Humanoid) then
+            return
+        end
+
+        LocalPlayer.Character.Humanoid:EquipTool(tool)
+        task.wait(0.2)
+
+        for _, locStr in ipairs(eggPositions) do
+            if not tool.Parent then
+                break
+            end
+
+            local currentEggs = #GAG:GetPlantedEggObjects()
+            if currentEggs >= maxEggs then
+                break 
+            end
+
+            local coords = {}
+            for coord in locStr:gmatch("([^,]+)") do
+                table.insert(coords, tonumber(coord))
+            end
+            local pos = Vector3.new(coords[1], coords[2], coords[3])
+
+            local beforeCount = #GAG:GetPlantedEggObjects()
+            petEggService:FireServer("CreateEgg", pos)
+            task.wait(0.5)
+            local afterCount = #GAG:GetPlantedEggObjects()
+        end
+    end
+
+    if LocalPlayer.Character and LocalPlayer.Character.Humanoid then
+        LocalPlayer.Character.Humanoid:UnequipTools()
+    end
+end
+
+--- Task: Auto Egg Hatch
+local function autoHatchEgg()
+    local function getObjectsPhysical()
+        local farmParent = workspace:FindFirstChild("Farm")
+        if not farmParent then return nil end
+        for _, farmFolder in ipairs(farmParent:GetChildren()) do
+            local important = farmFolder:FindFirstChild("Important")
+            if important and important:FindFirstChild("Data") and important.Data:FindFirstChild("Owner") and important.Data.Owner.Value == LocalPlayer.Name then
+                return important:FindFirstChild("Objects_Physical")
+            end
+        end
+        return nil
+    end
+
+    local objectsPhysical = getObjectsPhysical()
+    if objectsPhysical then
+        for _, obj in ipairs(objectsPhysical:GetChildren()) do
+            if obj:GetAttribute("TimeToHatch") == 0 then
+                petEggService:FireServer("HatchPet", obj)
+                task.wait(0.2)
+            end
+        end
+    end
+end
+
+--- Task: Auto Equip Pets
+local function autoEquipPets()
+    -- print("[DEBUG] Starting autoEquipPets")
+    
+    local petSpawnLocation = CFrame.new(-10, 0.5, -95)
+    local priorityList = Config["Equip Pets"] or {}
+    local maxSlots = GAG:GetMaxEquippedPets()
+    -- print("[DEBUG] Max Equipped Slots:", maxSlots)
+    
+    local equippedPets = GAG:GetEquippedPets()
+    -- print("[DEBUG] Current Equipped Pets count:", #equippedPets)
+    -- for i, pet in ipairs(equippedPets) do
+        -- print("[DEBUG] Equipped Pet " .. i .. ": Type=" .. pet.PetType .. ", Weight=" .. (pet.PetData.BaseWeight or 0) .. ", Level=" .. (pet.PetData.Level or 0) .. ", UUID=" .. pet.UUID)
+    -- end
+    
+    local allOwnedPets = GAG:GetPetsInInventory()
+    -- print("[DEBUG] Total Owned Pets count:", #allOwnedPets)
+
+    local prioritySet = {}
+    for _, name in ipairs(priorityList) do
+        prioritySet[name] = true
+    end
+    -- print("[DEBUG] Priority Pets Set:", table.concat(priorityList, ", "))
+
+    local equippedUUIDs = {}
+    for _, pet in ipairs(equippedPets) do
+        equippedUUIDs[pet.UUID] = true
+    end
+
+    local data = dataService:GetData()
+    if not (data and data.PetsData) then
+        -- print("[DEBUG] No PetsData available, returning")
+        return
+    end
+    local currentPetSlots = data.PetsData.PurchasedEquipSlots or 0
+    local currentEggSlots = data.PetsData.PurchasedEggSlots or 0
+    local targetPetSlots = Config["Unlock Pet Slots"] or 0
+    local targetEggSlots = Config["Unlock Egg Slots"] or 0
+    -- print("[DEBUG] Current Pet Slots:", currentPetSlots, "Target:", targetPetSlots)
+    -- print("[DEBUG] Current Egg Slots:", currentEggSlots, "Target:", targetEggSlots)
+
+    local rarityOrder = {
+        ["Common"] = 1,
+        ["Uncommon"] = 2,
+        ["Rare"] = 3,
+        ["Legendary"] = 4,
+        ["Mythical"] = 5,
+        ["Divine"] = 6,
+        ["Prismatic"] = 7,
+    }
+
+    local inUnlockMode = (currentPetSlots < targetPetSlots) or (currentEggSlots < targetEggSlots)
+    -- print("[DEBUG] In Unlock Mode:", inUnlockMode)
+
+    local nonPriorityEquipped = {}
+    for _, pet in ipairs(equippedPets) do
+        if not prioritySet[pet.PetType] then
+            table.insert(nonPriorityEquipped, pet)
+        end
+    end
+    -- print("[DEBUG] Non-Priority Equipped Pets count:", #nonPriorityEquipped)
+    
+    -- Sort non-priority equipped by weight ascending (unequip worst first), then level asc if equal, stable by UUID
+    table.sort(nonPriorityEquipped, function(a, b)
+        local aWeight = a.PetData.BaseWeight or 0
+        local bWeight = b.PetData.BaseWeight or 0
+        if aWeight ~= bWeight then return aWeight < bWeight end
+        
+        local aLevel = a.PetData.Level or 0
+        local bLevel = b.PetData.Level or 0
+        if aLevel ~= bLevel then return aLevel < bLevel end
+        
+        -- Stable tie-breaker: compare UUID lexicographically
+        return a.UUID < b.UUID
+    end)
+    -- print("[DEBUG] Sorted Non-Priority Equipped (asc weight):")
+    -- for i, pet in ipairs(nonPriorityEquipped) do
+        -- print("[DEBUG]   " .. i .. ": Type=" .. pet.PetType .. ", Weight=" .. (pet.PetData.BaseWeight or 0) .. ", Level=" .. (pet.PetData.Level or 0) .. ", UUID=" .. pet.UUID)
+    -- end
+
+    local priorityUnequipped = {}
+    local anyUnequipped = {}
+    for _, pet in ipairs(allOwnedPets) do
+        if not equippedUUIDs[pet.UUID] then
+            if prioritySet[pet.PetType] then
+                table.insert(priorityUnequipped, pet)
+            else
+                table.insert(anyUnequipped, pet)
+            end
+        end
+    end
+    -- print("[DEBUG] Priority Unequipped count:", #priorityUnequipped)
+    -- print("[DEBUG] Any Unequipped count:", #anyUnequipped)
+    
+    -- Sort priority unequipped by weight descending, then level desc if equal, stable by UUID
+    table.sort(priorityUnequipped, function(a, b)
+        local aWeight = a.PetData.BaseWeight or 0
+        local bWeight = b.PetData.BaseWeight or 0
+        if aWeight ~= bWeight then return aWeight > bWeight end
+        
+        local aLevel = a.PetData.Level or 0
+        local bLevel = b.PetData.Level or 0
+        if aLevel ~= bLevel then return aLevel > bLevel end
+        
+        -- Stable tie-breaker: compare UUID lexicographically (desc for consistency)
+        return a.UUID > b.UUID
+    end)
+    -- print("[DEBUG] Sorted Priority Unequipped (desc weight):")
+    for i, pet in ipairs(priorityUnequipped) do
+        -- print("[DEBUG]   " .. i .. ": Type=" .. pet.PetType .. ", Weight=" .. (pet.PetData.BaseWeight or 0) .. ", Level=" .. (pet.PetData.Level or 0) .. ", UUID=" .. pet.UUID)
+    end
+
+    local replacementsToMake = math.min(#nonPriorityEquipped, #priorityUnequipped)
+    -- print("[DEBUG] Replacements to make:", replacementsToMake)
+    if replacementsToMake > 0 then
+        for i = 1, replacementsToMake do
+            local petToUnequip = nonPriorityEquipped[i]
+            local petToEquip = priorityUnequipped[i]
+            
+            -- print("[DEBUG] Unequipping pet:", petToUnequip.PetType, "UUID:", petToUnequip.UUID)
+            petToUnequip:UnequipPet()
+            task.wait(1.5)
+
+            -- print("[DEBUG] Equipping pet:", petToEquip.PetType, "UUID:", petToEquip.UUID)
+            petToEquip:EquipPet(petSpawnLocation)
+            task.wait(1.5)
+        end
+        equippedPets = GAG:GetEquippedPets()
+        -- print("[DEBUG] After replacements, Equipped Pets count:", #equippedPets)
+    end
+    
+    local currentEquippedCount = #equippedPets
+    local slotsToFill = maxSlots - currentEquippedCount
+    -- print("[DEBUG] Slots to fill:", slotsToFill)
+
+    if slotsToFill <= 0 then
+        -- print("[DEBUG] No slots to fill, returning")
+        return
+    end
+
+    local finalPriorityToFill = {}
+    local finalAnyToFill = {}
+    allOwnedPets = GAG:GetPetsInInventory()
+    local newEquippedUUIDs = {}
+    for _, pet in ipairs(equippedPets) do
+        newEquippedUUIDs[pet.UUID] = true
+    end
+    for _, pet in ipairs(allOwnedPets) do
+        if not newEquippedUUIDs[pet.UUID] then
+            if prioritySet[pet.PetType] then
+                table.insert(finalPriorityToFill, pet)
+            else
+                table.insert(finalAnyToFill, pet)
+            end
+        end
+    end
+    -- print("[DEBUG] Final Priority to Fill count:", #finalPriorityToFill)
+    -- print("[DEBUG] Final Any to Fill count:", #finalAnyToFill)
+
+    -- Sort final priority to fill by weight descending, then level desc, stable by UUID
+    table.sort(finalPriorityToFill, function(a, b)
+        local aWeight = a.PetData.BaseWeight or 0
+        local bWeight = b.PetData.BaseWeight or 0
+        if aWeight ~= bWeight then return aWeight > bWeight end
+        
+        local aLevel = a.PetData.Level or 0
+        local bLevel = b.PetData.Level or 0
+        if aLevel ~= bLevel then return aLevel > bLevel end
+        
+        return a.UUID > b.UUID
+    end)
+    -- print("[DEBUG] Sorted Final Priority to Fill (desc weight):")
+    -- for i, pet in ipairs(finalPriorityToFill) do
+        -- print("[DEBUG]   " .. i .. ": Type=" .. pet.PetType .. ", Weight=" .. (pet.PetData.BaseWeight or 0) .. ", Level=" .. (pet.PetData.Level or 0) .. ", UUID=" .. pet.UUID)
+    -- end
+
+    local fillQueue = {}
+    if inUnlockMode then
+        -- print("[DEBUG] In Unlock Mode - Sorting for unlock")
+        local capybaraPets = {}
+        local starfishPets = {}
+        local otherPets = {}
+
+        for _, pet in ipairs(finalAnyToFill) do
+            if pet.PetType == "Capybara" then
+                table.insert(capybaraPets, pet)
+            elseif pet.PetType == "Starfish" then
+                table.insert(starfishPets, pet)
+            else
+                table.insert(otherPets, pet)
+            end
+        end
+        -- print("[DEBUG] Capybara Pets count:", #capybaraPets)
+        -- print("[DEBUG] Starfish Pets count:", #starfishPets)
+        -- print("[DEBUG] Other Pets count:", #otherPets)
+
+        -- Sort otherPets by rarity ascending (commons first), then weight desc, level desc, stable UUID
+        table.sort(otherPets, function(a, b)
+            local aRarityNum = rarityOrder[PetData[a.PetType].Rarity] or 999
+            local bRarityNum = rarityOrder[PetData[b.PetType].Rarity] or 999
+            if aRarityNum ~= bRarityNum then return aRarityNum < bRarityNum end
+            
+            local aWeight = a.PetData.BaseWeight or 0
+            local bWeight = b.PetData.BaseWeight or 0
+            if aWeight ~= bWeight then return aWeight > bWeight end
+            
+            local aLevel = a.PetData.Level or 0
+            local bLevel = b.PetData.Level or 0
+            if aLevel ~= bLevel then return aLevel > bLevel end
+            
+            return a.UUID > b.UUID
+        end)
+        -- print("[DEBUG] Sorted Other Pets (asc rarity, desc weight):")
+        for i, pet in ipairs(otherPets) do
+            -- print("[DEBUG]   " .. i .. ": Type=" .. pet.PetType .. ", Rarity=" .. (PetData[pet.PetType].Rarity or "Unknown") .. ", Weight=" .. (pet.PetData.BaseWeight or 0) .. ", Level=" .. (pet.PetData.Level or 0) .. ", UUID=" .. pet.UUID)
+        end
+
+        -- Sort capybara by weight descending, level desc, stable UUID
+        table.sort(capybaraPets, function(a, b)
+            local aWeight = a.PetData.BaseWeight or 0
+            local bWeight = b.PetData.BaseWeight or 0
+            if aWeight ~= bWeight then return aWeight > bWeight end
+            
+            local aLevel = a.PetData.Level or 0
+            local bLevel = b.PetData.Level or 0
+            if aLevel ~= bLevel then return aLevel > bLevel end
+            
+            return a.UUID > b.UUID
+        end)
+        -- print("[DEBUG] Sorted Capybara (desc weight):")
+        for i, pet in ipairs(capybaraPets) do
+            -- print("[DEBUG]   " .. i .. ": Weight=" .. (pet.PetData.BaseWeight or 0) .. ", Level=" .. (pet.PetData.Level or 0) .. ", UUID=" .. pet.UUID)
+        end
+
+        -- Sort starfish by weight descending, level desc, stable UUID
+        table.sort(starfishPets, function(a, b)
+            local aWeight = a.PetData.BaseWeight or 0
+            local bWeight = b.PetData.BaseWeight or 0
+            if aWeight ~= bWeight then return aWeight > bWeight end
+            
+            local aLevel = a.PetData.Level or 0
+            local bLevel = b.PetData.Level or 0
+            if aLevel ~= bLevel then return aLevel > bLevel end
+            
+            return a.UUID > b.UUID
+        end)
+        -- print("[DEBUG] Sorted Starfish (desc weight):")
+        for i, pet in ipairs(starfishPets) do
+            -- print("[DEBUG]   " .. i .. ": Weight=" .. (pet.PetData.BaseWeight or 0) .. ", Level=" .. (pet.PetData.Level or 0) .. ", UUID=" .. pet.UUID)
+        end
+
+        -- Build fillQueue: Capybara > Starfish > Priority Pets > Other
+        for _, pet in ipairs(capybaraPets) do table.insert(fillQueue, pet) end
+        for _, pet in ipairs(starfishPets) do table.insert(fillQueue, pet) end
+        for _, pet in ipairs(finalPriorityToFill) do table.insert(fillQueue, pet) end
+        for _, pet in ipairs(otherPets) do table.insert(fillQueue, pet) end
+    else
+        -- Sort finalAnyToFill by weight descending, level desc, stable UUID
+        table.sort(finalAnyToFill, function(a, b)
+            local aWeight = a.PetData.BaseWeight or 0
+            local bWeight = b.PetData.BaseWeight or 0
+            if aWeight ~= bWeight then return aWeight > bWeight end
+            
+            local aLevel = a.PetData.Level or 0
+            local bLevel = b.PetData.Level or 0
+            if aLevel ~= bLevel then return aLevel > bLevel end
+            
+            return a.UUID > b.UUID
+        end)
+        -- print("[DEBUG] Sorted Final Any to Fill (desc weight):")
+        for i, pet in ipairs(finalAnyToFill) do
+            -- print("[DEBUG]   " .. i .. ": Type=" .. pet.PetType .. ", Weight=" .. (pet.PetData.BaseWeight or 0) .. ", Level=" .. (pet.PetData.Level or 0) .. ", UUID=" .. pet.UUID)
+        end
+        
+        for _, pet in ipairs(finalPriorityToFill) do table.insert(fillQueue, pet) end
+        for _, pet in ipairs(finalAnyToFill) do table.insert(fillQueue, pet) end
+    end
+    -- print("[DEBUG] Fill Queue count:", #fillQueue)
+    -- print("[DEBUG] Fill Queue details:")
+    for i, pet in ipairs(fillQueue) do
+        -- print("[DEBUG]   " .. i .. ": Type=" .. pet.PetType .. ", Weight=" .. (pet.PetData.BaseWeight or 0) .. ", Level=" .. (pet.PetData.Level or 0) .. ", UUID=" .. pet.UUID)
+    end
+
+    if #fillQueue == 0 then
+        -- print("[DEBUG] No pets to fill queue, returning")
+        return
+    end
+
+    local petsEquippedInThisPhase = 0
+    for i = 1, math.min(slotsToFill, #fillQueue) do
+        local petToEquip = fillQueue[i]
+        -- print("[DEBUG] Equipping fill pet:", petToEquip.PetType, "UUID:", petToEquip.UUID)
+        petToEquip:EquipPet(petSpawnLocation)
+        petsEquippedInThisPhase = petsEquippedInThisPhase + 1
+        task.wait(1)
+    end
+    -- print("[DEBUG] Pets equipped in this phase:", petsEquippedInThisPhase)
+    -- print("[DEBUG] autoEquipPets completed")
+end
+
+-- Task: Sell Pet
+local function autoSellUnwantedPets()
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local sellPetEvent = ReplicatedStorage:WaitForChild("GameEvents"):WaitForChild("SellPet_RE")
+    local PetList = require(ReplicatedStorage:WaitForChild("Data"):WaitForChild("PetRegistry")).PetList
+
+    local keepPetList = Config["Pet Dont Delete"] or {}
+
+    local rarityWeightThresholds = {}
+    if Config["Rarity Dont Delete"] then
+        for rarity, kgThreshold in pairs(Config["Rarity Dont Delete"]) do
+            rarityWeightThresholds[rarity] = tonumber(kgThreshold:match("%d+%.?%d*")) or 0
+        end
+    end
+
+    local data = dataService:GetData()
+    if not (data and data.PetsData) then
+        return
+    end
+
+    local currentPetSlots = data.PetsData.PurchasedEquipSlots or 0
+    local currentEggSlots = data.PetsData.PurchasedEggSlots or 0
+    local targetPetSlots = Config["Unlock Pet Slots"] or 0
+    local targetEggSlots = Config["Unlock Egg Slots"] or 0
+    local inUnlockMode = (currentPetSlots < targetPetSlots) or (currentEggSlots < targetEggSlots)
+
+    local maxKeepSpecialPets = data.PetsData.MutableStats.MaxEquippedPets or 3
+
+    local totalCapybara = 0
+    local totalStarfish = 0
+    for _, petInfo in pairs(data.PetsData.PetInventory.Data) do
+        if petInfo.PetType == "Capybara" then
+            totalCapybara += 1
+        elseif petInfo.PetType == "Starfish" then
+            totalStarfish += 1
+        end
+    end
+
+    local foundPetToSell = false
+    local backpackItems = LocalPlayer.Backpack:GetChildren()
+
+    for _, tool in ipairs(backpackItems) do
+        if tool:IsA("Tool") then
+            local itemType = tool:GetAttribute("ItemType")
+            local attrPetType = tool:GetAttribute("PetType")
+
+            if itemType ~= "Pet" or attrPetType ~= "Pet" then
+                continue
+            end
+
+            local rawName = tool.Name
+            local baseName = rawName:match("^(.-)%s*%[") or rawName
+            local petType = baseName  -- Giữ nguyên khoảng trắng
+
+            local attrWeight = tool:GetAttribute("BaseWeight") or 0
+            local parsedWeight = tonumber(rawName:match("%[(%d+%.?%d*) KG%]")) or attrWeight
+
+            if not PetList[petType] then
+                continue
+            end
+
+            local rarity = PetList[petType].Rarity or "Unknown"
+
+            local shouldKeep = false
+
+            if rarity == "Divine" or rarity == "Prismatic" then
+                shouldKeep = true
+            else
+                local weightThreshold = rarityWeightThresholds[rarity] or 999
+                if parsedWeight >= weightThreshold then
+                    shouldKeep = true
+                end
+
+                for _, keepName in ipairs(keepPetList) do
+                    if string.lower(keepName) == string.lower(baseName) then
+                        shouldKeep = true
+                        break
+                    end
+                end
+            end
+
+            local isSpecialPet = (petType == "Capybara" or petType == "Starfish")
+            if isSpecialPet then
+                if inUnlockMode then
+                    local totalSpecial = totalCapybara + totalStarfish
+                    if totalSpecial > maxKeepSpecialPets then
+                        if petType == "Starfish" then
+                            shouldKeep = false
+                            totalStarfish -= 1
+                        elseif petType == "Capybara" and totalStarfish == 0 then
+                            shouldKeep = false
+                            totalCapybara -= 1
+                        else
+                            shouldKeep = true
+                        end
+                    else
+                        shouldKeep = true
+                    end
+                end
+            end
+
+            if not shouldKeep then
+                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+                    local successEquip, errEquip = pcall(function()
+                        LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):EquipTool(tool)
+                    end)
+
+                    task.wait(0.5)
+
+                    local petInstance = workspace[LocalPlayer.Name]:FindFirstChild(rawName)
+                    if petInstance then
+                        local successSell, errSell = pcall(function()
+                            sellPetEvent:FireServer(petInstance)
+                        end)
+
+                        if successSell then
+                            foundPetToSell = true
+                        end
+                        task.wait(0.5)
+                    end
+                end
+            end
+        end
+    end
+end
+
+--- Task: Auto Use Dino Machine
+local function autoUseDinoMachine()
+    local playerData = dataService:GetData()
+    local dinoMachine = playerData and playerData.DinoMachine
+    if not dinoMachine then
+        return
+    end
+
+    if dinoMachine.RewardReady then
+        dinoMachineService:FireServer("ClaimReward")
+        task.wait(1)
+        return
+    end
+
+    if not dinoMachine.IsRunning then
+        local keepPetList = Config["Pet Dont Delete"] or {}
+        local rarityDontDelete = Config["Rarity Dont Delete"] or {}
+        local rarityOrder = {
+            ["Common"] = 1,
+            ["Uncommon"] = 2,
+            ["Rare"] = 3,
+            ["Epic"] = 4,
+            ["Legendary"] = 5,
+            ["Mythical"] = 6,
+            ["Divine"] = 7,
+            ["Prismatic"] = 8,
+        }
+
+        local eligiblePets = {}
+        for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
+            if tool:IsA("Tool") and tool:GetAttribute("PetType") then
+                local rawName = tool.Name
+                local baseName = rawName:match("^(.-)%s*%[") or rawName
+                local petType = tool:GetAttribute("PetType")
+                local weight = tool:GetAttribute("BaseWeight") or 0
+                local rarity = (PetData[petType] and PetData[petType].Rarity) or "Unknown"
+
+                local shouldKeep = false
+                for _, keepName in ipairs(keepPetList) do
+                    if string.lower(keepName) == string.lower(baseName) then
+                        shouldKeep = true
+                        break
+                    end
+                end
+                if not shouldKeep then
+                    for rarityToKeep, kgThreshold in pairs(rarityDontDelete) do
+                        if rarity == rarityToKeep then
+                            local threshold = tonumber(kgThreshold:match("%d+%.?%d*")) or 0
+                            if weight >= threshold then
+                                shouldKeep = true
+                                break
+                            end
+                        end
+                    end
+                end
+
+                if not shouldKeep then
+                    table.insert(eligiblePets, {tool = tool, rarity = rarity, weight = weight})
+                end
+            end
+        end
+
+        if #eligiblePets > 0 then
+            table.sort(eligiblePets, function(a, b)
+                local aOrder = rarityOrder[a.rarity] or 0
+                local bOrder = rarityOrder[b.rarity] or 0
+                if aOrder == bOrder then
+                    return a.weight > b.weight
+                else
+                    return aOrder > bOrder
+                end
+            end)
+
+            local petToSubmit = eligiblePets[1].tool
+            if petToSubmit and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+                LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):EquipTool(petToSubmit)
+                task.wait(0.5)
+                dinoMachineService:FireServer("MachineInteract")
+                task.wait(1)
+            end
+        end
+    end
+end
+
+--- Task: Auto Feed Pet
+local function autoFeedPet()
+    -- print("[DEBUG] Starting autoFeedPet")
+    
+    -- [[ Services and Modules ]]
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local Players = game:GetService("Players")
+    local LocalPlayer = Players.LocalPlayer
+    
+    -- Lấy các module cần thiết
+    local successDS, DataService = pcall(require, ReplicatedStorage.Modules.DataService)
+    if not successDS then 
+        -- print("[DEBUG] Failed to load DataService:", DataService) 
+        return 
+    end
+    
+    local successPR, PetRegistry = pcall(require, ReplicatedStorage.Data.PetRegistry)
+    if not successPR then 
+        -- print("[DEBUG] Failed to load PetRegistry:", PetRegistry) 
+        return 
+    end
+    
+    local successDec, Decimal = pcall(require, ReplicatedStorage.Data.DecimalNumberFormat)
+    if not successDec then 
+        -- print("[DEBUG] Failed to load DecimalNumberFormat:", Decimal) 
+        return 
+    end
+    
+    local activePetService = ReplicatedStorage:WaitForChild("GameEvents"):WaitForChild("ActivePetService")
+
+    -- Bọc trong pcall để tránh lỗi toàn bộ script
+    local success, err = pcall(function()
+        -- print("[DEBUG] Inside pcall")
+        
+        -- [[ Lấy dữ liệu người chơi ]]
+        local playerData = DataService:GetData()
+        if not playerData then
+            -- print("[DEBUG] No playerData returned")
+            return
+        end
+        -- print("[DEBUG] playerData exists")
+        
+        if not (playerData.PetsData and playerData.PetsData.EquippedPets and playerData.PetsData.PetInventory and playerData.PetsData.PetInventory.Data) then
+            -- print("[DEBUG] Missing PetsData fields")
+            return
+        end
+
+        local equippedPets = playerData.PetsData.EquippedPets
+        -- print("[DEBUG] Equipped Pets count:", #equippedPets)
+        if #equippedPets == 0 then
+            -- print("[DEBUG] No equipped pets, skipping feed")
+            return
+        end
+        
+        local inventoryData = playerData.PetsData.PetInventory.Data
+        local PetList = PetRegistry.PetList
+
+        -- [[ Vòng lặp qua các pet đã trang bị ]]
+        for _, petId in ipairs(equippedPets) do
+            -- print("[DEBUG] Processing petId:", petId)
+            local petInfo = inventoryData[petId]
+            if not petInfo then
+                -- print("[DEBUG] No petInfo for petId:", petId)
+                continue
+            end
+            
+            local petRegistryData = PetList[petInfo.PetType]
+            if not petRegistryData then
+                -- print("[DEBUG] No registry data for pet type:", petInfo.PetType)
+                continue
+            end
+
+            local defaultHunger = petRegistryData.DefaultHunger
+            -- print("[DEBUG] Default Hunger:", defaultHunger)
+            
+            local currentHungerStr = Decimal(petInfo.PetData.Hunger)
+            -- print("[DEBUG] Current Hunger String:", currentHungerStr)
+            
+            -- Convert string to number for comparison
+            local currentHungerNum = tonumber(currentHungerStr)
+            if not currentHungerNum then
+                -- print("[DEBUG] Failed to convert currentHungerStr to number:", currentHungerStr)
+                continue
+            end
+            -- print("[DEBUG] Current Hunger Number:", currentHungerNum)
+            
+            -- Tính threshold dưới dạng number
+            local hungerThreshold = defaultHunger * 0.5
+            -- print("[DEBUG] Hunger Threshold:", hungerThreshold)
+
+            -- Pet được coi là đói nếu cơn đói dưới 50%
+            if currentHungerNum < hungerThreshold then
+                -- print("[DEBUG] Pet is hungry! Starting feed for petId:", petId)
+                
+                -- [[ Tìm thức ăn trong túi đồ ]]
+                local foodTool = nil
+                for _, item in ipairs(LocalPlayer.Backpack:GetChildren()) do
+                    if item:IsA("Tool") and item:GetAttribute("b") == "j" then
+                        foodTool = item
+                        -- print("[DEBUG] Found foodTool:", foodTool.Name)
+                        break
+                    end
+                end
+                if not foodTool then
+                    -- print("[DEBUG] No food found in Backpack. Check if food items exist and are 'Holdable'")
+                end
+
+                -- Nếu tìm thấy thức ăn, bắt đầu cho ăn
+                if foodTool and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+                    local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    -- print("[DEBUG] Equipping foodTool")
+                    
+                    -- Trang bị thức ăn
+                    humanoid:EquipTool(foodTool)
+                    task.wait(0.1) -- Đợi một chút để trang bị
+                    if foodTool.Parent ~= LocalPlayer.Character then
+                        -- print("[DEBUG] Failed to equip foodTool")
+                    end
+
+                    -- [[ Vòng lặp cho ăn liên tục ]]
+                    local feedCount = 0
+                    repeat
+                        feedCount = feedCount + 1
+                        -- print("[DEBUG] Feed loop iteration:", feedCount)
+                        
+                        -- Kiểm tra xem thức ăn còn trong tay không
+                        if not foodTool.Parent or foodTool.Parent ~= LocalPlayer.Character then
+                            -- print("[DEBUG] Food tool no longer equipped, breaking loop")
+                            break
+                        end
+                        
+                        -- Gửi yêu cầu cho ăn
+                        -- print("[DEBUG] Sending Feed request for petId:", petId)
+                        activePetService:FireServer("Feed", petId)
+                        task.wait(0.1)
+
+                        -- Cập nhật lại dữ liệu pet để kiểm tra cơn đói mới nhất
+                        local updatedData = DataService:GetData()
+                        if not updatedData then 
+                            -- print("[DEBUG] No updatedData, breaking")
+                            break 
+                        end
+                        
+                        local updatedPetInfo = updatedData.PetsData.PetInventory.Data[petId]
+                        if not updatedPetInfo then 
+                            -- print("[DEBUG] No updatedPetInfo, breaking")
+                            break 
+                        end
+
+                        -- Update currentHungerNum
+                        local updatedHungerStr = Decimal(updatedPetInfo.PetData.Hunger)
+                        -- print("[DEBUG] Updated Hunger String:", updatedHungerStr)
+                        currentHungerNum = tonumber(updatedHungerStr)
+                        if not currentHungerNum then
+                            -- print("[DEBUG] Failed to convert updatedHungerStr to number:", updatedHungerStr)
+                            break
+                        end
+                        -- print("[DEBUG] Updated Hunger Number:", currentHungerNum)
+                    until currentHungerNum >= defaultHunger or not foodTool.Parent or foodTool.Parent ~= LocalPlayer.Character
+                    
+                    -- print("[DEBUG] Feed loop ended for petId:", petId, "Final Hunger:", currentHungerNum)
+                else
+                    -- print("[DEBUG] No food or no humanoid for feeding petId:", petId)
+                end
+            else
+                -- print("[DEBUG] Pet not hungry:", petId, "Current:", currentHungerNum, "Threshold:", hungerThreshold)
+            end
+        end
+    end)
+
+    if not success then
+        -- warn("[AutoFeed] An error occurred: ", tostring(err))
+    else
+        -- print("[DEBUG] autoFeedPet completed successfully")
+    end
+end
+
+local function autoCraftAntiBeeEgg()
+    while GetConfigValue("Enabled") do
+        local userConfig = getgenv().UserConfig or {}
+        local autoCraftAntiBeeEggEnabled = userConfig["Craft Anti Bee Egg"] == true
+        if not autoCraftAntiBeeEggEnabled then
+            task.wait(1)
+            continue
+        end
+
+        local playerData = dataService:GetData()
+        if not playerData or not playerData.SpecialCurrency or not playerData.SpecialCurrency.Honey then
+            task.wait(3)
+            continue
+        end
+
+        local honeyAmount = playerData.SpecialCurrency.Honey
+
+        local BeeEgg = getItem("Bee Egg", "startswith")
+        if not BeeEgg then
+            task.wait(3)
+            continue
+        end
+
+        if honeyAmount < 25 then
+            task.wait(3)
+            continue
+        end
+
+        local EventCraftingPrompt = EventCraftingWorkBench:FindFirstChild("CraftingProximityPrompt", true)
+        if not EventCraftingPrompt then
+            task.wait(3)
+            continue
+        end
+
+        if EventCraftingPrompt.ActionText == "Claim" then
+            local args = {"Claim", EventCraftingWorkBench, "GearEventWorkbench", 1}
+            craftingService:FireServer(unpack(args))
+            task.wait(1)
+        end
+
+        if EventCraftingPrompt.ActionText ~= "Skip" then
+            if EventCraftingPrompt.ActionText == "Claim" then
+                local args = {"Claim", EventCraftingWorkBench, "GearEventWorkbench", 1}
+                craftingService:FireServer(unpack(args))
+                task.wait(1)
+            end
+
+            if EventCraftingPrompt.ActionText == "Submit Item" or EventCraftingPrompt.ActionText:match("^Start Crafting") then
+                local args = {"Cancel", EventCraftingWorkBench, "GearEventWorkbench"}
+                craftingService:FireServer(unpack(args))
+                task.wait(1)
+            end
+
+            if EventCraftingPrompt.ActionText == "Select Recipe" then
+                local args = {"SetRecipe", EventCraftingWorkBench, "GearEventWorkbench", "Anti Bee Egg"}
+                craftingService:FireServer(unpack(args))
+                task.wait(1)
+
+                local itemUUID = BeeEgg:GetAttribute("c")
+                local args = {
+                    "InputItem",
+                    EventCraftingWorkBench,
+                    "GearEventWorkbench",
+                    1,
+                    {
+                        ItemType = "PetEgg",
+                        ItemData = {
+                            UUID = itemUUID
+                        }
+                    }
+                }
+                craftingService:FireServer(unpack(args))
+                task.wait(1)
+
+                local args = {"Craft", EventCraftingWorkBench, "GearEventWorkbench"}
+                craftingService:FireServer(unpack(args))
+                task.wait(3)
+            end
+        end
+        task.wait(5)
+    end
+end
+
+-- ==================================================
+-- MAIN AUTOMATION LOOP
+-- ==================================================
+
+local function getPlayerFarmFolder()
+    local farmParent = workspace:FindFirstChild("Farm")
+    if not farmParent then return nil end
+
+    for _, farmFolder in ipairs(farmParent:GetChildren()) do
+        local important = farmFolder:FindFirstChild("Important")
+        if important and important:FindFirstChild("Data") and important.Data:FindFirstChild("Owner") and important.Data.Owner.Value == LocalPlayer.Name then
+            return farmFolder
+        end
+    end
+
+    return nil
+end
+
+-- Task: Auto Harvest (Tách riêng task.spawn và kiểm soát bằng InventoryFull)
+-- task.spawn(function()
+--     while true do
+--         if not getgenv().InventoryFull then
+--             local farmFolder = getPlayerFarmFolder()
+--             if farmFolder then
+--                 local PlantsPhysical = farmFolder:FindFirstChild("Important"):FindFirstChild("Plants_Physical")
+--                 if PlantsPhysical then
+--                     for _, plant in ipairs(PlantsPhysical:GetChildren()) do
+--                         if getgenv().InventoryFull then break end
+--                         task.wait(0.01)
+
+--                         local growFolder = plant:FindFirstChild("Grow")
+--                         local ageVal = growFolder and growFolder:FindFirstChild("Age")
+--                         local maxAgeAttr = plant:GetAttribute("MaxAge")
+--                         local maxAgeVal = maxAgeAttr or (plant:FindFirstChild("MaxAge") and plant.MaxAge.Value)
+
+--                         if ageVal and maxAgeVal and ageVal.Value >= maxAgeVal then
+--                             local fruitsFolder = plant:FindFirstChild("Fruits")
+--                             if fruitsFolder then
+--                                 for _, fruit in ipairs(fruitsFolder:GetChildren()) do
+--                                     ByteNetReliable:FireServer(buffer.fromstring("\001\001\000\001"), { fruit })
+--                                 end
+--                             else
+--                                 ByteNetReliable:FireServer(buffer.fromstring("\001\001\000\001"), { plant })
+--                             end
+--                         end
+--                     end
+--                 end
+--             end
+--         end
+--         task.wait(0.5)
+--     end
+-- end)
+
+local function onNotif(text)
+    if string.find(text, "Max backpack space! Go sell!") then
+        getgenv().InventoryFull = true
+    end
+    if string.find(text, "You cannot plant more than 800 seeds :(") then
+        getgenv().PlantsFull = true
+    end 
+end
+
+-- local topNotifGui = LocalPlayer.PlayerGui:FindFirstChild("Top_Notification") or LocalPlayer.PlayerGui:FindFirstChild("TopNotification")
+-- if topNotifGui then
+--     local frame = topNotifGui:FindFirstChild("Frame") or topNotifGui
+--     frame.ChildAdded:Connect(function(child)
+--         local label = child:FindFirstChild("TextLabel") or (child:IsA("TextLabel") and child)
+--         if label then
+--             label:GetPropertyChangedSignal("Text"):Connect(function() onNotif(label.Text) end)
+--             onNotif(label.Text)
+--         end
+--     end)
+-- end
+
+local tasks = {
+    {name = "Auto Remove Texture Plants", func = autoHidePlants, enabled = true},
+    {name = "Auto Hide UI", func = disableScreenGuis, enabled = false},
+    {name = "Auto Plant", func = autoPlant, enabled = true},
+    {name = "Auto Gear", func = autoGear, enabled = true},
+    {name = "Auto Use Seed Packs", func = autoUseSeedPacks, enabled = true},
+    {name = "Auto Harvest", func = autoHarvest, enabled = false},
+    {name = "Auto Use Dino Machine", func = autoUseDinoMachine, enabled = false},
+    {name = "Auto Egg Place", func = autoPlaceEgg, enabled = true},
+    {name = "Auto Egg Hatch", func = autoHatchEgg, enabled = true},
+    {name = "Auto Equip Pet", func = autoEquipPets, enabled= true},
+    {name = "Auto Unlock Slots", func = autoUnlockSlots, enabled = true},
+    {name = "Auto Sell Pet", func = autoSellUnwantedPets, enabled = true},
+    {name = "Auto Feed Pet", func = autoFeedPet, enabled = true},
+    {name = "Auto Submit Kitsune", func = autoSubmitToFox, enabled = false},
+    {name = "Auto Event Zen", func = eventZen, enabled = false},
+    {name = "Auto Collect Honey", func = autoCollectHoney, enabled = false},    
+    {name = "Auto Sell", func = autoSell, enabled = false},
+    {name = "Auto Buy Seed", func = autoBuySeed, enabled = false},
+    {name = "Auto Buy Gear", func = autoBuyGear, enabled = false},
+    {name = "Auto Buy Egg", func = autoBuyEgg, enabled = false},
+    {name = "Auto Buy Event Shop", func = autoBuyEventShop, enabled = false},
+    {name = "Auto Craft Anti Bee Egg", func = autoCraftAntiBeeEgg, enabled = true}
+}
+
+task.spawn(function()
+    while task.wait(1) do
+        pcall(autoSubmitToFox)
+        task.wait(0.5)
+        pcall(eventZen)
+        task.wait(0.5)
+        pcall(autoSell)
+        task.wait(0.5)
+        pcall(autoHarvest)
+    end
+end)
+
+task.spawn(function()
+    while task.wait(10) do
+        pcall(autoBuySeed)
+        task.wait(0.5)
+        pcall(autoBuyGear)
+        task.wait(0.5)
+        pcall(autoBuyEgg)
+        task.wait(0.5)
+        pcall(autoBuyEventShop)
+    end
+end)
+
+print("Duck Hub | 🐤 discord.gg/duckhub 🐤")
+local farmIndex = getMyFarmIndex()
+if not farmIndex then
+    return
+end
+
+task.spawn(function()
+    while task.wait(0.2) do
+        for i, taskItem in ipairs(tasks) do
+            if taskItem.enabled then
+                local success, err = pcall(taskItem.func)
+                task.wait(0.2)
+            end
+        end
+    end
+end)
+
+-- ==================================================
+-- ANTI-AFK & NOTIFICATIONS
+-- ==================================================
+
+Notification:CreateNotification("Duck Hub | 🐤 discord.gg/duckhub 🐤")
+
+LocalPlayer.Idled:Connect(function()
+    game:GetService("VirtualUser"):CaptureController()
+    game:GetService("VirtualUser"):ClickButton2(Vector2.new())
+end)
+
+local function petNotifier()
+    local DataService = require(game:GetService("ReplicatedStorage").Modules.DataService)
+    local HttpService = game:GetService("HttpService")
+    local LocalPlayer = game:GetService("Players").LocalPlayer
+    local PetList = require(game:GetService("ReplicatedStorage").Data.PetRegistry).PetList
+
+    local knownPetUUIDs = {}
+    
+    local userPingPetsSet = {}
+    if Config["Ping Pets"] then
+        for _, petName in ipairs(Config["Ping Pets"]) do
+            userPingPetsSet[petName] = true
+        end
+    end
+
+    local adminPingRaritySet = {}
+    if getgenv().AdminConfig["Ping Rarity"] then
+        for rarity, kgThreshold in pairs(getgenv().AdminConfig["Ping Rarity"]) do
+            adminPingRaritySet[rarity] = tonumber(kgThreshold:match("%d+%.?%d*")) or 0
+        end
+    end
+
+    local userPingRaritySet = {}
+    if Config["Ping Rarity"] then
+        for rarity, kgThreshold in pairs(Config["Ping Rarity"]) do
+            userPingRaritySet[rarity] = tonumber(kgThreshold:match("%d+%.?%d*")) or 0
+        end
+    end
+
+    -- ==================== HELPER FUNCTIONS FOR WEBHOOK ====================
+    
+    local function getImageThumbnail(assetId)
+        if not assetId or type(assetId) ~= "string" then return nil end
+        local assetIdNumber = assetId:match("rbxassetid://(%d+)")
+        if not assetIdNumber then return nil end
+
+        local url = "https://thumbnails.roblox.com/v1/assets?assetIds=" .. assetIdNumber .. "&size=420x420&format=png&isCircular=false"
+        
+        local requestFunc = (syn and syn.request) or (http and http.request) or request or http_request
+        if not requestFunc then return nil end
+
+        local success, result = pcall(function() return requestFunc({Url = url, Method = "GET"}).Body end)
+
+        if success and result then
+            local successDecode, data = pcall(HttpService.JSONDecode, HttpService, result)
+            if successDecode and data and data.data and data.data[1] and data.data[1].imageUrl then
+                return data.data[1].imageUrl
+            end
+        end
+        return nil
+    end
+
+    local function sendNotificationForNewPet(petInfo, isAdmin)
+        local config = isAdmin and getgenv().AdminConfig or getgenv().UserConfig
+        local webhookUrl = config and config["Webhook Url"]
+        if not webhookUrl or webhookUrl == "" then return end
+        
+        local mention = ""
+        if not isAdmin and config["Discord ID"] and type(config["Discord ID"]) == "string" and config["Discord ID"]:match("^%d+$") then
+            mention = "<@" .. config["Discord ID"] .. ">"
+        end
+        
+        local petType = petInfo.PetType or "Unknown"
+        local petName = petInfo.PetData and petInfo.PetData.Name or "Unnamed"
+        local weight = petInfo.PetData and petInfo.PetData.BaseWeight or 0
+        local rarity = "Unknown"
+
+        local petRegistryData = PetList[petType]
+        if petRegistryData and petRegistryData.Rarity then
+            rarity = petRegistryData.Rarity
+        end
+
+        local thumbnailUrl = nil
+        if petRegistryData and petRegistryData.Icon then
+            thumbnailUrl = getImageThumbnail(petRegistryData.Icon)
+        end
+
+        local formattedWeight = (type(weight) == "number" and string.format("%.2f", weight)) or weight
+
+        local descriptionText = ""
+        if not isAdmin then
+            descriptionText = descriptionText .. "<:user:1364067337069662259> Username: " .. "||" .. LocalPlayer.Name .. "||" .. "\n"
+        end
+        descriptionText = descriptionText .. "🌟 Rarity: " .. "**" .. rarity .. "**" .. "\n"
+        descriptionText = descriptionText .. "📊 Weight: " .. "**" .. formattedWeight .. " kg**" .. "\n"
+
+        local note = config["Note Webhook"] or ""
+        if note ~= "" and not isAdmin then
+            descriptionText = descriptionText .. "\n**Note:** " .. note
+        end
+
+        local embed = {
+            title = "**" .. petType .. "**",
+            description = descriptionText,
+            color = 16762880,
+            footer = { 
+                text = "🐤 discord.gg/duckhub 🐤 • " .. os.date("%Y-%m-%d %H:%M:%S")
+            }
+        }
+
+        if thumbnailUrl then
+            embed.thumbnail = { url = thumbnailUrl }
+        end
+        
+        local dataToSend = {
+            username = "Duck Hub",
+            avatar_url = "https://media.discordapp.net/attachments/1362324076583976980/1373564991822757918/4beaa87c-b9db-4230-84ef-a68926a94d5b.jpg?ex=682adf95&is=68298e15&hm=09ce89f3679b8633ffccdbef0880582416a74acc2fb5d5481fc38eac4c340d73&=&format=webp&width=960&height=960",
+            content = mention,
+            embeds = {embed}
+        }
+        
+        local requestFunc = (syn and syn.request) or (http and http.request) or request or http_request
+        pcall(function()
+            requestFunc({ Url = webhookUrl, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = HttpService:JSONEncode(dataToSend) })
+        end)
+    end
+
+    task.wait(5)
+    local initialData = DataService:GetData()
+    if initialData and initialData.PetsData and initialData.PetsData.PetInventory then
+        for uuid, _ in pairs(initialData.PetsData.PetInventory.Data) do
+            knownPetUUIDs[uuid] = true
+        end
+    end
+
+    while task.wait(5) do
+        local data = DataService:GetData()
+        if not (data and data.PetsData and data.PetsData.PetInventory) then continue end
+
+        for uuid, petInfo in pairs(data.PetsData.PetInventory.Data) do
+            if not knownPetUUIDs[uuid] then
+                knownPetUUIDs[uuid] = true
+                
+                local petType = petInfo.PetType or "Unknown"
+                local weight = petInfo.PetData and petInfo.PetData.BaseWeight or 0
+                local petRarity = "Unknown"
+                local petRegistryData = PetList[petType]
+                if petRegistryData and petRegistryData.Rarity then
+                    petRarity = petRegistryData.Rarity
+                end
+
+                if userPingPetsSet[petType] or (userPingRaritySet[petRarity] and weight >= userPingRaritySet[petRarity]) then
+                    sendNotificationForNewPet(petInfo, false) -- isAdmin = false
+                end
+
+                if adminPingRaritySet[petRarity] and weight >= adminPingRaritySet[petRarity] then
+                    sendNotificationForNewPet(petInfo, true) -- isAdmin = true
+                end
+            end
+        end
+    end
+end
+
+
+task.spawn(petNotifier)
+
+-- ==================================================================
+-- ==================== DUCK HUB UI MODULE =====================
+-- ==================================================================
+
+local DuckUI = {}
+local duckScreenGuiInstance = nil 
+local createDuckUI
+local startUIDataUpdater
+local startUITimer
+
+createDuckUI = function()
+    -- if (getgenv().UserConfig and getgenv().UserConfig.HideUI == true) or duckScreenGuiInstance then
+    --     return
+    -- end
+
+    duckScreenGuiInstance = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+    duckScreenGuiInstance.Name = "DuckScreenGui_Fullscreen"
+    duckScreenGuiInstance.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    duckScreenGuiInstance.DisplayOrder = 9999
+    duckScreenGuiInstance.ResetOnSpawn = false
+    duckScreenGuiInstance.IgnoreGuiInset = true
+
+    local Background = Instance.new("Frame", duckScreenGuiInstance)
+    Background.Name = "Background"
+    Background.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    Background.BorderSizePixel = 0
+    Background.Size = UDim2.new(1, 0, 1, 0)
+
+    local TopContainer = Instance.new("Frame", Background)
+    TopContainer.Name = "TopContainer"; TopContainer.BackgroundTransparency=1; TopContainer.AnchorPoint=Vector2.new(0.5,0); TopContainer.Position=UDim2.new(0.5,0,0,20); TopContainer.Size=UDim2.new(0,600,0,60)
+    local TopListLayout = Instance.new("UIListLayout", TopContainer); TopListLayout.HorizontalAlignment=Enum.HorizontalAlignment.Center; TopListLayout.VerticalAlignment=Enum.VerticalAlignment.Top
+
+    local CenterContainer = Instance.new("Frame", Background)
+    CenterContainer.Name = "CenterContainer"; CenterContainer.BackgroundTransparency=1; CenterContainer.AnchorPoint=Vector2.new(0.5,0.5); CenterContainer.Position=UDim2.new(0.5,0,0.5,0); CenterContainer.Size=UDim2.new(0,500,0,400)
+    local CenterListLayout = Instance.new("UIListLayout", CenterContainer); CenterListLayout.Padding=UDim.new(0,5); CenterListLayout.SortOrder=Enum.SortOrder.LayoutOrder; CenterListLayout.HorizontalAlignment=Enum.HorizontalAlignment.Center; CenterListLayout.VerticalAlignment=Enum.VerticalAlignment.Center
+    
+    local function createText(parentFrame, layoutOrder, name, initialText, baseSize)
+        local label = Instance.new("TextLabel", parentFrame)
+        label.Name=name; label.LayoutOrder=layoutOrder; label.BackgroundTransparency=1; label.Font=Enum.Font.GothamBold; label.Text=initialText; label.TextColor3=Color3.fromRGB(235,235,235); label.TextSize=baseSize; label.TextXAlignment=Enum.TextXAlignment.Center; label.Size=UDim2.new(1,0,0,baseSize+5)
+        return label
+    end
+
+    createText(TopContainer, 1, "DiscordLabel", "🐤 discord.gg/duckhub 🐤", 48).TextColor3 = Color3.fromRGB(255, 255, 150)
+    createText(CenterContainer, 2, "UsernameLabel", "👤 " .. LocalPlayer.Name, 36)
+    local Spacer1 = Instance.new("Frame", CenterContainer); Spacer1.LayoutOrder=3; Spacer1.BackgroundTransparency=1; Spacer1.Size=UDim2.new(0,300,0,10)
+    createText(CenterContainer, 4, "FruitsLabel", "🍎 Fruits: Loading...", 32)
+    createText(CenterContainer, 5, "PetsLabel", "🐾 Pets: Loading...", 32)
+    createText(CenterContainer, 6, "EquippedPetsLabel", "✨ Equipped: Loading...", 32)
+    createText(CenterContainer, 7, "PlacedEggsLabel", "🥚 Placed Eggs: Loading...", 32)
+    createText(CenterContainer, 8, "PlantsLabel", "🌱 Plants: Loading...", 32)
+    local Spacer2 = Instance.new("Frame", CenterContainer); Spacer2.LayoutOrder=9; Spacer2.BackgroundTransparency=1; Spacer2.Size=UDim2.new(0,300,0,10)
+    createText(CenterContainer, 10, "ShecklesLabel", "💰 Sheckles: Loading...", 32)
+    createText(CenterContainer, 11, "ChiPointsLabel", "☯️ Chi Points: Loading...", 32)
+    createText(CenterContainer, 12, "ZenTreeLevelLabel", "🌳 Zen Tree: Loading...", 32)
+    createText(CenterContainer, 13, "ZenPointsLabel", "⚪ Zen Points: Loading...", 32)
+    createText(CenterContainer, 14, "TranquilLevelLabel", "🔵 Tranquil Level: Loading...", 32)
+    createText(CenterContainer, 15, "CorruptionLevelLabel", "🔴 Corruption Level: Loading...", 32)
+    createText(CenterContainer, 16, "UptimeLabel", "⏱️ Uptime: 00:00:00", 32)
+
+    local function updateTextSizes()
+        if not duckScreenGuiInstance or not Background.Parent then return end
+        local windowHeight = duckScreenGuiInstance.AbsoluteSize.Y
+        local baseHeight = 1080
+        local scaleFactor = math.max(0.5, windowHeight / baseHeight)
+        local baseSizes = {DiscordLabel=48, UsernameLabel=36, FruitsLabel=32, PetsLabel=32, EquippedPetsLabel=32, PlacedEggsLabel=32, PlantsLabel=32, ShecklesLabel=32, ChiPointsLabel=32, ZenTreeLevelLabel=32, ZenPointsLabel=32, TranquilLevelLabel=32, CorruptionLevelLabel=32, UptimeLabel=32}
+        for _, container in ipairs({TopContainer, CenterContainer}) do
+            for _, child in ipairs(container:GetChildren()) do
+                if child:IsA("TextLabel") and baseSizes[child.Name] then
+                    child.TextSize = math.floor(baseSizes[child.Name] * scaleFactor)
+                    child.Size = UDim2.new(1, 0, 0, child.TextSize + 5)
+                end
+            end
+        end
+    end
+    
+    duckScreenGuiInstance:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateTextSizes)
+    task.wait(); updateTextSizes()
+    startUIDataUpdater(CenterContainer)
+    startUITimer(CenterContainer.UptimeLabel)
+    duckScreenGuiInstance.Destroying:Connect(function() duckScreenGuiInstance=nil; task.wait(2); createDuckUI() end)
+end
+
+startUIDataUpdater = function(container)
+    task.spawn(function()
+        while duckScreenGuiInstance and duckScreenGuiInstance.Parent do
+            local success, err = pcall(function()
+                if not container or not container.Parent then return end
+                
+                local data = dataService:GetData()
+                if not data then return end
+                
+                local inventoryData = data.InventoryData or {}
+                local currentItemCount = 0
+                for _, item in ipairs(game:GetService("Players").LocalPlayer.Backpack:GetChildren()) do
+                    if item:GetAttribute("b") == "j" then
+                        currentItemCount += 1
+                    end
+                end
+
+                local maxItems = inventoryService.MaxItems or 200
+                container.FruitsLabel.Text = string.format("🍎 Fruits: %d/%d", currentItemCount, maxItems)
+                
+                container.PetsLabel.Text = string.format("🐾 Pets: %d/%d", #GAG:GetPetsInInventory(), GAG:GetMaxPets())
+                container.EquippedPetsLabel.Text = string.format("✨ Equipped: %d/%d", #GAG:GetEquippedPets(), GAG:GetMaxEquippedPets())
+                container.PlacedEggsLabel.Text = string.format("🥚 Placed Eggs: %d/%d", #GAG:GetPlantedEggObjects(), GAG:GetMaxEggsInFarm())
+                
+                local sheckles = GAG:GetShecklesCurrency()
+                container.ShecklesLabel.Text = string.format("💰 Sheckles: %s", string.format("%d", sheckles):reverse():gsub("(%d%d%d)","%1,"):reverse():gsub("^,",""))
+
+                container.ChiPointsLabel.Text = string.format("☯️ Chi Points: %d", data.SpecialCurrency.Chi or 0)
+                container.ZenTreeLevelLabel.Text = string.format("🌳 Zen Tree: %d", data.ZenTree.CurrentTreeLevel or 0)
+                container.ZenPointsLabel.Text = string.format("⚪ Zen Points: %d", data.ZenTree.SubmittedPlantsValue or 0)
+                container.TranquilLevelLabel.Text = string.format("🔵 Tranquil Level: %d", data.ZenEventData.TranquilLevel or 0)
+                container.CorruptionLevelLabel.Text = string.format("🔴 Corruption Level: %d", data.ZenEventData.CorruptionLevel or 0)
+
+                local farmFolder = getPlayerFarmFolder()
+                local plantCount = (farmFolder and farmFolder.Important.Plants_Physical and #farmFolder.Important.Plants_Physical:GetChildren()) or 0
+                container.PlantsLabel.Text = string.format("🌱 Plants: %d/800", plantCount)
+            end)
+            task.wait(2)
+        end
+    end)
+end
+
+startUITimer = function(uptimeLabel)
+    task.spawn(function()
+        local startTime = tick()
+        while duckScreenGuiInstance and duckScreenGuiInstance.Parent do
+            if uptimeLabel and uptimeLabel.Parent then
+                local elapsed = tick() - startTime
+                local h, m, s = math.floor(elapsed/3600), math.floor((elapsed%3600)/60), math.floor(elapsed%60)
+                uptimeLabel.Text = string.format("⏱️ Uptime: %02d:%02d:%02d", h, m, s)
+            end
+            task.wait(1)
+        end
+    end)
+end
+-- ==================================================================
+-- =================== KẾT THÚC DUCK UI MODULE ======================
+-- ==================================================================
+
+createDuckUI()
+
+local FarmLocal = require(ReplicatedStorage.Modules.GetFarm)(Players.LocalPlayer)
+
+local function keepPetsIdleAtFarmCenter()
+    while true do
+        task.wait(0.5)
+        pcall(function()
+            local data = dataService:GetData()
+            for petId, _ in pairs(data.PetsData.PetInventory.Data) do
+                activePetService:FireServer("SetPetState", petId, "Idle", FarmLocal.Center_Point.Position)
+            end
+        end)
+    end
+end
+
+task.spawn(keepPetsIdleAtFarmCenter)
+
+local v1 = game:GetService("ReplicatedStorage")
+local v2 = game:GetService("ReplicatedStorage")
+
+local getplace = (function()
+    local GetFarm = require(game.ReplicatedStorage.Modules.GetFarm)(game.Players.LocalPlayer)
+    return GetFarm
+end)
+
+repeat
+    wait()
+until getplace()
+
+for i, v in getplace().Important.Plants_Physical:GetChildren() do
+    for i1, v1 in next, v:GetChildren() do
+        if v1.Name ~= "1" and v1:IsA("Part") then
+            v1:Destroy()
+        end
+        if v1:IsA("Model") or v1:IsA("MeshPart") then
+            v1:Destroy()
+        end
+        if v1.Name == "Fruits" then
+            for i2, v2 in next, v1:GetChildren() do
+                for i3, v3 in next, v2:GetChildren() do
+                    if (v3.Name ~= "1" and not v3:FindFirstChild("ProximityPrompt")) or v3:IsA("MeshPart") then
+                        v3:Destroy()
+                    end
+                    if v3:IsA("Model") or v3:IsA("MeshPart") then
+                        v3:Destroy()
+                    end
+                end
+            end
+        end
+    end
+end
+for i, v in workspace.Farm:GetChildren() do
+    if v ~= getplace() then
+        v:Destroy()
+    end
+
+end
+
+for i, v in workspace.Terrain:GetChildren() do
+    v:Destroy()
+end
+
+for i, v in game:GetService("Players").LocalPlayer.PlayerScripts:GetChildren() do
+    if v.Name ~= "InputGateway" and v.Name ~= "PlayerModule" and v.Name ~= "Backpack_V3" and v.Name ~= "CustomPack_New" then
+        v:Destroy()
+    end
+end
+
+local aaa = {"Camera", "Terrain", "Farm", game.Players.LocalPlayer.Name, "Interaction", "NPCS", "PetsPhysical",
+             "BasePlate", "CraftingTables", "Tutorial_Points", "DinoEvent", "WeatherVisuals"}
+
+for i, v in workspace:GetChildren() do
+    if not table.find(aaa, v.Name) then
+        v:Destroy()
+    end
+
+end
+
+for i, v in getplace().Important.Plants_Physical:GetDescendants() do
+    pcall(function()
+        if v:IsA("Model") or v:IsA("Part") then
+            v.Transparency = 1
+        end
+    end)
+end
+
+-- for i, v in game.Players:GetChildren() do
+--     if v.Name ~= LocalPlayer.Name then
+--         v:Destroy()
+--     end
+-- end
+
+for i, v in game:GetService("Lighting"):GetChildren() do
+    if v.Name ~= "Blur" then
+        v:Destroy()
+    end
+end
+
+for i, v in workspace.PetsPhysical:GetChildren() do
+    if v:GetAttribute("OWNER") ~= LocalPlayer.Name then
+        v:Destroy()
+    end
+end
+
+for i, v in game:GetService("ReplicatedStorage").Assets:GetChildren() do
+    if v.Name ~= "Animations" and v.Name ~= "Models" and v.Name ~= "TravelingMerchantModels" then
+        v:Destroy()
+    end
+end
+
+for i, v in game:GetService("ReplicatedStorage").Assets.Models:GetChildren() do
+    if v.Name ~= "EggModels" and v.Name ~= "SeedPacks" then
+        v:Destroy()
+    end
+end
+
+local delete = {"CosmeticServices", "Cosmetics", "OptimisationControllers", "FriendshipPot", "Settings",
+                "4thJulyfireworks"}
+
+for i, v in game:GetService("ReplicatedStorage").Modules:GetChildren() do
+    if table.find(delete, v.Name) then
+        v:Destroy()
+    end
+end
+
+for i, v in game:GetService("ReplicatedStorage"):GetChildren() do
+    if string.find(v.ClassName, "Sound") or v:IsA("BoolValue") or v:IsA("ObjectValue") or v:IsA("Part") or
+        v:IsA("Model") or v:IsA("MeshPart") or v:IsA("Frame") or v:IsA("BillboardGui") or v:IsA("ScreenGui") or
+        v:IsA("ImageLabel") or v:IsA("TextLabel") or v:IsA("NumberValue") or v:IsA("IntValue") then
+        v:Destroy()
+    end
+end
+
+if game:GetService("ReplicatedStorage"):FindFirstChild("NPC_UIS") then
+    game:GetService("ReplicatedStorage"):FindFirstChild("NPC_UIS"):Destroy()
+end
+
+for i, v in workspace.NPCS:GetChildren() do
+    if v.Name ~= "Steven" and v.Name ~= "Sam" then
+        v:Destroy()
+    end
+end
+
+for i, v in workspace.WeatherVisuals:GetChildren() do
+    v:Destroy()
+end
+
+task.wait(3)
+print("Loaded")
+
+local PlayerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+local duckGui = PlayerGui:FindFirstChild("DuckScreenGui_Fullscreen")
+
+for _, ui in ipairs(PlayerGui:GetDescendants()) do
+    if duckGui and (ui == duckGui or ui:IsDescendantOf(duckGui)) then
+        continue
+    end
+
+    if ui:IsA("ScreenGui") then
+        ui.Enabled = false
+    elseif ui:IsA("GuiObject") then
+        ui.Visible = false
+    end
+end
+
+workspace.Farm.ChildAdded:Connect(function(v)
+    if v ~= getplace() then
+        v:Destroy()
+    end
+end)
+
+getplace().Important.Plants_Physical.ChildAdded:Connect(function(v)
+    for i1, v1 in next, v:GetChildren() do
+        if v1.Name ~= "1" and v1:IsA("Part") then
+            v1:Destroy()
+        end
+        if v1:IsA("Model") or v1:IsA("MeshPart") then
+            v1:Destroy()
+        end
+        if v1.Name == "Fruits" then
+            for i2, v2 in next, v1:GetChildren() do
+                for i3, v3 in next, v2:GetChildren() do
+                    if (v3.Name ~= "1" and not v3:FindFirstChild("ProximityPrompt")) or v3:IsA("MeshPart") then
+                        v3:Destroy()
+                    end
+                    if v3:IsA("Model") or v3:IsA("MeshPart") then
+                        v3:Destroy()
+                    end
+                end
+            end
+        end
+    end
+end)
+
+workspace.ChildAdded:Connect(function(v)
+    if not table.find(aaa, v.Name) then
+        v:Destroy()
+    end
+end)
+
+workspace.Terrain.ChildAdded:Connect(function(v)
+    v:Destroy()
+
+end)
+
+getplace().Important.Plants_Physical.DescendantAdded:Connect(function(v)
+    pcall(function()
+        if v:IsA("Model") or v:IsA("Part") then
+            v.Transparency = 1
+        end
+    end)
+end)
+
+PlayerGui.DescendantAdded:Connect(function(ui)
+    if ui:IsA("ScreenGui") then
+        ui.Enabled = false
+    elseif ui:IsA("GuiObject") then
+        ui.Visible = false
+    end
+end)
+
+game:GetService("Lighting").ChildAdded:Connect(function(v)
+    if v.Name ~= "Blur" then
+        v:Destroy()
+    end
+end)
+
+game.Players.ChildAdded:Connect(function(v)
+    if v.Name ~= LocalPlayer.Name then
+        v:Destroy()
+    end
+end)
